@@ -1,0 +1,49 @@
+{
+  "synthetic_data_only": true,
+  "language": "en",
+  "capture": "Real Flik PTY sessions with burned-in hotkey coaching",
+  "videos": [
+    {
+      "file": "kubernetes-json.mp4",
+      "poster": "kubernetes-json.png",
+      "captions": "kubernetes-json.vtt",
+      "steps": "kubernetes-json.steps.json",
+      "duration": 17.8,
+      "width": 1280,
+      "height": 960,
+      "bytes": 541790,
+      "actions": 9
+    },
+    {
+      "file": "smart-find.mp4",
+      "poster": "smart-find.png",
+      "captions": "smart-find.vtt",
+      "steps": "smart-find.steps.json",
+      "duration": 18.7,
+      "width": 1280,
+      "height": 960,
+      "bytes": 725978,
+      "actions": 8
+    },
+    {
+      "file": "hourly-frequency.mp4",
+      "poster": "hourly-frequency.png",
+      "captions": "hourly-frequency.vtt",
+      "steps": "hourly-frequency.steps.json",
+      "duration": 17.7,
+      "width": 1280,
+      "height": 960,
+      "bytes": 957180,
+      "actions": 9
+    },
+    {
+      "file": "apache-levels.mp4",
+      "poster": "apache-levels.png",
+      "captions": "apache-levels.vtt",
+      "duration": 9.7,
+      "width": 1280,
+      "height": 832,
+      "bytes": 250959
+    }
+  ]
+}

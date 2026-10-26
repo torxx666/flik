@@ -1,0 +1,10 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+An Apache error log has severity levels, not HTTP codes.
+
+00:00:02.000 --> 00:00:07.000
+S: ERROR, NOTICE, WARN... the levels found in your log.
+
+00:00:07.000 --> 00:00:09.700
+Select a level to filter the matching events.

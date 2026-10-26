@@ -1,0 +1,65 @@
+[
+  {
+    "start": 0.0,
+    "key": "g",
+    "title": "Open the compact Kubernetes log",
+    "detail": "Real CRI records with a nested JSON payload.",
+    "end": 0.4
+  },
+  {
+    "start": 0.4,
+    "key": "w",
+    "title": "Press w \u2014 make JSON readable",
+    "detail": "Expand the nested payload directly inside the log view.",
+    "end": 2.0
+  },
+  {
+    "start": 2.0,
+    "key": "\u2193 \u2191",
+    "title": "Move through the expanded events",
+    "detail": "Keep the original timestamp and structured fields in view.",
+    "end": 3.6
+  },
+  {
+    "start": 3.6,
+    "key": "6",
+    "title": "Press 6 \u2014 inspect the detected fields",
+    "detail": "Structured field selection is available without rewriting the log.",
+    "end": 5.5
+  },
+  {
+    "start": 5.5,
+    "key": "3",
+    "title": "Type service:payment",
+    "detail": "Add an include filter; keep only payment events.",
+    "end": 9.3
+  },
+  {
+    "start": 9.3,
+    "key": "3",
+    "title": "Type level:error",
+    "detail": "Stack a second include filter on top of service:payment.",
+    "end": 13.1
+  },
+  {
+    "start": 13.1,
+    "key": "x",
+    "title": "Type x \u2014 remove last filter",
+    "detail": "Undo level:error; keep the broader service:payment filter.",
+    "end": 14.9
+  },
+  {
+    "start": 14.9,
+    "key": "w",
+    "title": "Press w \u2014 switch back to compact",
+    "detail": "The filters stay active while the JSON view changes.",
+    "end": 16.3
+  },
+  {
+    "start": 16.3,
+    "key": "w",
+    "title": "Press w \u2014 expand the payload again",
+    "detail": "From compact records to readable JSON in one keystroke.",
+    "end": 17.8
+  }
+]

@@ -1,0 +1,25 @@
+2026-01-12T09:00:00Z INFO   gateway ready
+2026-01-12T09:00:01Z INFO   configuration loaded
+2026-01-12T09:00:02Z INFO   worker started
+2026-01-12T09:00:03Z INFO   cache warmup complete
+2026-01-12T09:00:04Z INFO   request req-demo-01 accepted
+2026-01-12T09:00:05Z INFO   request completed in 24ms
+2026-01-12T09:00:06Z INFO   request req-demo-02 accepted
+2026-01-12T09:00:07Z INFO   reading job queue
+2026-01-12T09:00:08Z NOTICE queue depth: 8
+2026-01-12T09:00:09Z INFO   opening upstream connection
+2026-01-12T09:00:10Z WARN   upstream response delayed
+2026-01-12T09:00:11Z ERROR  upstream timeout; request req-demo-02
+2026-01-12T09:00:12Z INFO   retry scheduled
+2026-01-12T09:00:13Z INFO   retry completed in 30ms
+2026-01-12T09:00:14Z INFO   request req-demo-03 accepted
+2026-01-12T09:00:15Z INFO   request completed in 18ms
+2026-01-12T09:00:16Z INFO   request req-demo-04 accepted
+2026-01-12T09:00:17Z INFO   loading catalog
+2026-01-12T09:00:18Z WARN   cache entry expired
+2026-01-12T09:00:19Z INFO   opening cache connection
+2026-01-12T09:00:20Z WARN   cache pool at capacity
+2026-01-12T09:00:21Z ERROR  cache timeout; request req-demo-04
+2026-01-12T09:00:22Z INFO   connection released
+2026-01-12T09:00:23Z INFO   request retried successfully
+2026-01-12T09:00:24Z INFO   worker heartbeat

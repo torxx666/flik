@@ -1,0 +1,65 @@
+[
+  {
+    "start": 0.0,
+    "key": "/",
+    "title": "Type /error",
+    "detail": "Start with a focused search for error events.",
+    "end": 2.5
+  },
+  {
+    "start": 2.5,
+    "key": "H",
+    "title": "Press H \u2014 count matches by hour",
+    "detail": "Exact counts across the indexed file; context is excluded.",
+    "end": 4.2
+  },
+  {
+    "start": 4.2,
+    "key": "\u2193 \u2191",
+    "title": "Scroll the hourly report",
+    "detail": "Read the dates, UTC hours, counts and distribution.",
+    "end": 5.8
+  },
+  {
+    "start": 5.8,
+    "key": "Esc",
+    "title": "Press Esc \u2014 return to the filtered log",
+    "detail": "Keep the error filter while changing the time interval.",
+    "end": 7.0
+  },
+  {
+    "start": 7.0,
+    "key": "Ctrl+K",
+    "title": "Type histogram minute",
+    "detail": "Choose one-minute buckets from the command dialog.",
+    "end": 11.0
+  },
+  {
+    "start": 11.0,
+    "key": "PgDn",
+    "title": "Press Page Down \u2014 explore minute buckets",
+    "detail": "Scroll through the finer-grained distribution.",
+    "end": 13.3
+  },
+  {
+    "start": 13.3,
+    "key": "Esc",
+    "title": "Press Esc \u2014 keep the filter, close the report",
+    "detail": "Return to the source events without rebuilding the query.",
+    "end": 14.5
+  },
+  {
+    "start": 14.5,
+    "key": "x",
+    "title": "Type x \u2014 remove last filter",
+    "detail": "Undo the search and restore every event.",
+    "end": 15.7
+  },
+  {
+    "start": 15.7,
+    "key": "g \u2193",
+    "title": "Browse the restored log",
+    "detail": "The original data remains unchanged throughout the investigation.",
+    "end": 17.7
+  }
+]

@@ -1,0 +1,127 @@
+name: Release binaries
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-14
+            target: aarch64-apple-darwin
+    env:
+      RUST_VERSION: '1.94.0'
+      TARGET: ${{ matrix.target }}
+      TAG: ${{ github.ref_name }}
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET"
+          rustup override set "$RUST_VERSION"
+      - name: Validate version tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Use a stable vMAJOR.MINOR.PATCH tag.'; exit 1; }
+          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "flik"))')
+          test "$TAG" = "v$version" || { echo 'Tag and Cargo.toml version differ.'; exit 1; }
+      - name: Install native musl tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Test and build
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=."
+          if [[ "$TARGET" == *-linux-musl ]]; then
+            export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+          fi
+          cargo test --locked --all-targets --target "$TARGET"
+          cargo build --locked --release --target "$TARGET"
+          test "$(target/"$TARGET"/release/flik --version)" = "flik ${TAG#v}"
+          if [[ "$TARGET" == *-linux-musl ]]; then
+            file "target/$TARGET/release/flik" | grep -E 'statically linked|static-pie linked'
+          fi
+      - name: Archive binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts package
+          cp "target/$TARGET/release/flik" LICENSE package/
+          tar -czf "artifacts/flik-$TAG-$TARGET.tar.gz" -C package flik LICENSE
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: binary-${{ matrix.target }}
+          path: artifacts/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish verified release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          pattern: binary-*
+          merge-multiple: true
+          path: artifacts
+      - name: Verify assets and produce checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts
+          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 4
+          sha256sum flik-*.tar.gz > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Prebuilt Flik binaries for Linux x86-64 / ARM64 and macOS Intel / Apple Silicon.
+
+          Download the archive matching your platform, verify its SHA-256 against SHA256SUMS, extract it and run `flik --version`. No Rust installation is needed.
+
+          Linux builds use musl and are checked for static linking. macOS builds require macOS 11 or later and are not Developer ID signed or notarized. Windows release binaries are not provided yet.
+
+          These checksums detect damaged or mismatched downloads; they are not independent publisher signatures. Review the source and release provenance when deciding what to trust.
+          NOTES
+      - name: Publish tested binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" artifacts/*.tar.gz artifacts/SHA256SUMS \
+            --verify-tag --latest --title "Flik $TAG" --notes-file release-notes.md

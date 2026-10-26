@@ -1,0 +1,37 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.500
+Type /error
+Start with a focused search for error events.
+
+00:00:02.500 --> 00:00:04.200
+Press H — count matches by hour
+Exact counts across the indexed file; context is excluded.
+
+00:00:04.200 --> 00:00:05.800
+Scroll the hourly report
+Read the dates, UTC hours, counts and distribution.
+
+00:00:05.800 --> 00:00:07.000
+Press Esc — return to the filtered log
+Keep the error filter while changing the time interval.
+
+00:00:07.000 --> 00:00:11.000
+Type histogram minute
+Choose one-minute buckets from the command dialog.
+
+00:00:11.000 --> 00:00:13.300
+Press Page Down — explore minute buckets
+Scroll through the finer-grained distribution.
+
+00:00:13.300 --> 00:00:14.500
+Press Esc — keep the filter, close the report
+Return to the source events without rebuilding the query.
+
+00:00:14.500 --> 00:00:15.700
+Type x — remove last filter
+Undo the search and restore every event.
+
+00:00:15.700 --> 00:00:17.700
+Browse the restored log
+The original data remains unchanged throughout the investigation.

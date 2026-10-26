@@ -1,0 +1,7 @@
+2026-10-16T10:00:01.000000000Z stdout F Starting container backend-worker in namespace production
+2026-10-16T10:00:02.000000000Z stdout F Listening on port 8080 (http)
+2026-10-16T10:00:03.000000000Z stdout F {"time":"2026-10-16T10:00:03Z","level":"info","msg":"Connected to Kafka cluster kafka.prod.svc.cluster.local:9092"}
+2026-10-16T10:00:04.000000000Z stderr F {"time":"2026-10-16T10:00:04Z","level":"warn","msg":"Heartbeat latency high: 450ms"}
+2026-10-16T10:00:05.000000000Z stderr F {"time":"2026-10-16T10:00:05Z","level":"error","msg":"Failed to commit consumer offset partition=2 error=OffsetCommitTimeout"}
+2026-10-16T10:00:06.000000000Z stdout F Recovering consumer group session, attempting rebalance
+2026-10-16T10:00:07.000000000Z stdout F Rebalance complete. Assigned partitions: [0, 1, 2]

@@ -1,0 +1,13 @@
+services:
+  flik:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: flik:latest
+    stdin_open: true
+    tty: true
+    environment:
+      - TERM=xterm-256color
+    volumes:
+      - ./:/workspace:rw
+    working_dir: /workspace

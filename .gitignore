@@ -1,0 +1,14 @@
+/target
+
+# Local work and generated artifacts are not public source.
+.DS_Store
+__pycache__/
+.env
+.env.*
+/live_stream.log
+/REVUE_PRO.md
+/artifacts/
+/website/.git
+/website/.openai/
+/website/.sites-runtime/
+/website/.sites-checkout/

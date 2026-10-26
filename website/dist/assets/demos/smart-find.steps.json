@@ -1,0 +1,58 @@
+[
+  {
+    "start": 0.0,
+    "key": "/",
+    "title": "Type //3,2:error",
+    "detail": "Find errors with three lines before and two lines after.",
+    "end": 3.6
+  },
+  {
+    "start": 3.6,
+    "key": "\u2191 \u2193",
+    "title": "Browse the matching events",
+    "detail": "Gray lines provide context; the error stays highlighted.",
+    "end": 5.3
+  },
+  {
+    "start": 5.3,
+    "key": "x",
+    "title": "Type x \u2014 remove last filter",
+    "detail": "Undo the smart find and return to the full log.",
+    "end": 6.9
+  },
+  {
+    "start": 6.9,
+    "key": "3",
+    "title": "Type timeout",
+    "detail": "Add a focused include filter for timeout events.",
+    "end": 9.9
+  },
+  {
+    "start": 9.9,
+    "key": "8",
+    "title": "Type cache \u2014 exclude noisy matches",
+    "detail": "Stack an exclude filter without losing the timeout filter.",
+    "end": 12.9
+  },
+  {
+    "start": 12.9,
+    "key": "x",
+    "title": "Type x \u2014 remove last filter",
+    "detail": "Remove only the cache exclusion; both timeout events return.",
+    "end": 14.5
+  },
+  {
+    "start": 14.5,
+    "key": "Tab",
+    "title": "Press Tab \u2014 inspect structured columns",
+    "detail": "The same active filter can be viewed as a table.",
+    "end": 16.4
+  },
+  {
+    "start": 16.4,
+    "key": "x",
+    "title": "Type x \u2014 restore the full log",
+    "detail": "Remove timeout and resume browsing all events.",
+    "end": 18.7
+  }
+]

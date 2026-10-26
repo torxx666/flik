@@ -1,0 +1,33 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:03.600
+Type //3,2:error
+Find errors with three lines before and two lines after.
+
+00:00:03.600 --> 00:00:05.300
+Browse the matching events
+Gray lines provide context; the error stays highlighted.
+
+00:00:05.300 --> 00:00:06.900
+Type x — remove last filter
+Undo the smart find and return to the full log.
+
+00:00:06.900 --> 00:00:09.900
+Type timeout
+Add a focused include filter for timeout events.
+
+00:00:09.900 --> 00:00:12.900
+Type cache — exclude noisy matches
+Stack an exclude filter without losing the timeout filter.
+
+00:00:12.900 --> 00:00:14.500
+Type x — remove last filter
+Remove only the cache exclusion; both timeout events return.
+
+00:00:14.500 --> 00:00:16.400
+Press Tab — inspect structured columns
+The same active filter can be viewed as a table.
+
+00:00:16.400 --> 00:00:18.700
+Type x — restore the full log
+Remove timeout and resume browsing all events.

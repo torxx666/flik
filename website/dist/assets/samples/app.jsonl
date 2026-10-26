@@ -1,0 +1,5 @@
+{"timestamp": "2026-01-15T10:00:00Z", "level": "info", "service": "gateway", "message": "request accepted", "request_id": "req-demo-00"}
+{"timestamp": "2026-01-15T10:01:00Z", "level": "warn", "service": "payment", "message": "connection pool exhausted", "request_id": "req-demo-01"}
+{"timestamp": "2026-01-15T10:02:00Z", "level": "error", "service": "payment", "message": "upstream timeout", "request_id": "req-demo-02"}
+{"timestamp": "2026-01-15T10:03:00Z", "level": "info", "service": "worker", "message": "retry scheduled", "request_id": "req-demo-03"}
+{"timestamp": "2026-01-15T10:04:00Z", "level": "error", "service": "payment", "message": "payment request failed", "request_id": "req-demo-04"}

@@ -1,0 +1,8 @@
+{"time":"2026-10-16T10:00:01.120Z","level":"info","service":"auth-service","status":200,"user_id":"usr_912","msg":"User authenticated successfully","duration_ms":12.4}
+{"time":"2026-10-16T10:00:02.450Z","level":"info","service":"payment-gateway","status":200,"order_id":"ord_881","msg":"Payment intent created","amount":49.99}
+{"time":"2026-10-16T10:00:03.010Z","level":"warn","service":"order-service","status":429,"user_id":"usr_912","msg":"Rate limit approaching for client IP","retry_after":30}
+{"time":"2026-10-16T10:00:04.180Z","level":"error","service":"payment-gateway","status":500,"order_id":"ord_882","msg":"Bank gateway timeout after 5000ms","error":"E_TIMEOUT"}
+{"time":"2026-10-16T10:00:05.200Z","level":"debug","service":"cache-redis","status":200,"key":"sess_usr_912","msg":"Cache hit on session key","ttl":3590}
+{"time":"2026-10-16T10:00:06.310Z","level":"info","service":"notification-worker","status":200,"type":"email","msg":"Order confirmation email dispatched","recipient":"john@example.com"}
+{"time":"2026-10-16T10:00:07.890Z","level":"error","service":"inventory-service","status":503,"sku":"SKU-LAPTOP-X1","msg":"Database pool connection exhausted","pool_size":50}
+{"time":"2026-10-16T10:00:08.010Z","level":"info","service":"k8s-ingress","status":200,"path":"/api/v1/orders","msg":"HTTP request completed","client_ip":"192.168.1.50"}

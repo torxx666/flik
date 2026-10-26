@@ -1,0 +1,2 @@
+2026/01/15 10:02:00 [error] 100#0: *1 upstream timed out, client: 192.0.2.10, server: demo.example.test, request: "GET /api/demo HTTP/1.1", upstream: "http://127.0.0.1:8080/api/demo", host: "demo.example.test"
+2026/01/15 10:03:00 [notice] 100#0: worker process started

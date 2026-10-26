@@ -1,0 +1,5 @@
+192.0.2.1 - - [15/Jan/2026:10:00:00 +0000] "GET /api/demo HTTP/1.1" 200 128 "-" "demo-client"
+192.0.2.2 - - [15/Jan/2026:10:01:00 +0000] "GET /api/demo HTTP/1.1" 200 128 "-" "demo-client"
+192.0.2.3 - - [15/Jan/2026:10:02:00 +0000] "GET /api/demo HTTP/1.1" 502 128 "-" "demo-client"
+192.0.2.4 - - [15/Jan/2026:10:03:00 +0000] "GET /api/demo HTTP/1.1" 503 128 "-" "demo-client"
+192.0.2.5 - - [15/Jan/2026:10:04:00 +0000] "GET /api/demo HTTP/1.1" 200 128 "-" "demo-client"

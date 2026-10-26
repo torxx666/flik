@@ -1,0 +1,37 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.400
+Open the compact Kubernetes log
+Real CRI records with a nested JSON payload.
+
+00:00:00.400 --> 00:00:02.000
+Press w — make JSON readable
+Expand the nested payload directly inside the log view.
+
+00:00:02.000 --> 00:00:03.600
+Move through the expanded events
+Keep the original timestamp and structured fields in view.
+
+00:00:03.600 --> 00:00:05.500
+Press 6 — inspect the detected fields
+Structured field selection is available without rewriting the log.
+
+00:00:05.500 --> 00:00:09.300
+Type service:payment
+Add an include filter; keep only payment events.
+
+00:00:09.300 --> 00:00:13.100
+Type level:error
+Stack a second include filter on top of service:payment.
+
+00:00:13.100 --> 00:00:14.900
+Type x — remove last filter
+Undo level:error; keep the broader service:payment filter.
+
+00:00:14.900 --> 00:00:16.300
+Press w — switch back to compact
+The filters stay active while the JSON view changes.
+
+00:00:16.300 --> 00:00:17.800
+Press w — expand the payload again
+From compact records to readable JSON in one keystroke.
