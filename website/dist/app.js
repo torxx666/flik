@@ -41,12 +41,13 @@ tabButtons.forEach((button,index)=>{
  button.addEventListener('click',()=>{activeDemo=button.dataset.demo;renderDemo();});
  button.addEventListener('keydown',event=>{let next=index;if(event.key==='ArrowRight')next=(index+1)%tabButtons.length;else if(event.key==='ArrowLeft')next=(index+tabButtons.length-1)%tabButtons.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabButtons.length-1;else return;event.preventDefault();tabButtons[next].focus();tabButtons[next].click();});
 });
-const targets={'aarch64-apple-darwin':'macOS · Apple Silicon','x86_64-apple-darwin':'macOS · Intel','x86_64-unknown-linux-musl':'Linux · x86_64','aarch64-unknown-linux-musl':'Linux · ARM64'};
+const targets={'aarch64-apple-darwin':'macOS · Apple Silicon','x86_64-apple-darwin':'macOS · Intel','x86_64-unknown-linux-musl':'Linux · x86_64','aarch64-unknown-linux-musl':'Linux · ARM64','x86_64-pc-windows-msvc':'Windows · x86_64'};
 function renderInstall(){
  const version=release?.tag_name||'vVERSION',filename=`flik-${version}-${selectedTarget}.tar.gz`;
  document.querySelectorAll('[data-target]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.target===selectedTarget)));
- $('download-detail').textContent=`${targets[selectedTarget]} · .tar.gz`;
- $('install-command').textContent=`tar -xzf ${filename}\n./flik demo.log`;
+ $('download-detail').textContent=`${targets[selectedTarget]||'Platform'} · .tar.gz`;
+ if(selectedTarget.includes('windows'))$('install-command').textContent=`tar -xzf ${filename}\n.\\flik.exe demo.log`;
+ else $('install-command').textContent=`tar -xzf ${filename}\n./flik demo.log`;
  const github=$('github-link');github.hidden=!repository;if(repository)github.href=`https://github.com/${repository}`;
  const download=$('download-binary');const asset=release?.assets?.find(asset=>asset.name===filename);
  const validAsset=asset&&asset.browser_download_url===`https://github.com/${repository}/releases/download/${version}/${filename}`;
