@@ -140,13 +140,21 @@ impl Session {
             // Never overwrite logs, exports or arbitrary documents with a session.
             Self::read(path)?;
             for pane in &self.panes {
-                let source = std::fs::metadata(&pane.path).map_err(|e| e.to_string())?;
-                let target = std::fs::metadata(path).map_err(|e| e.to_string())?;
                 #[cfg(unix)]
                 {
+                    let source = std::fs::metadata(&pane.path).map_err(|e| e.to_string())?;
+                    let target = std::fs::metadata(path).map_err(|e| e.to_string())?;
                     use std::os::unix::fs::MetadataExt;
                     if source.ino() == target.ino() && source.dev() == target.dev() {
                         return Err("Session destination is an open log file".into());
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    if let (Ok(p1), Ok(p2)) = (std::fs::canonicalize(&pane.path), std::fs::canonicalize(path)) {
+                        if p1 == p2 {
+                            return Err("Session destination is an open log file".into());
+                        }
                     }
                 }
             }
