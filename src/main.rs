@@ -255,6 +255,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn configure_app(app: &mut App, cli: &Cli, is_stdin: bool) {
+    let config = flik::config::FlikConfig::load();
+    config.apply(app);
+
     if cli.follow || is_stdin {
         app.reader.set_tail_enabled(true);
         app.ui_state.tail_following = true;
@@ -274,17 +277,24 @@ fn configure_app(app: &mut App, cli: &Cli, is_stdin: bool) {
             &app.reader,
         );
     } else if let Some(ref fmt) = cli.format {
-        match fmt.to_lowercase().as_str() {
-            "json" => app.format.selected_format = LogFormat::Json,
-            "logfmt" => app.format.selected_format = LogFormat::Logfmt,
-            "nginx" | "nginx_access" | "apache" | "apache_combined" => app.format.selected_format = LogFormat::ApacheCombined,
-            "apache_common" => app.format.selected_format = LogFormat::ApacheCommon,
-            "apache_error" => app.format.selected_format = LogFormat::ApacheError,
-            "nginx_error" => app.format.selected_format = LogFormat::NginxError,
-            "k8s" | "kubernetes" => app.format.selected_format = LogFormat::Kubernetes,
-            "syslog" | "auth" | "auth.log" => app.format.selected_format = LogFormat::Syslog,
-            "raw" => app.format.selected_format = LogFormat::Raw,
-            _ => {}
+        if let Some(custom_fmt) = config.find_format(fmt) {
+            if let Err(e) = app.format.set_custom_regex(&custom_fmt.pattern) {
+                eprintln!("Error compiling custom format '{}': {}", custom_fmt.name, e);
+                std::process::exit(1);
+            }
+        } else {
+            match fmt.to_lowercase().as_str() {
+                "json" => app.format.selected_format = LogFormat::Json,
+                "logfmt" => app.format.selected_format = LogFormat::Logfmt,
+                "nginx" | "nginx_access" | "apache" | "apache_combined" => app.format.selected_format = LogFormat::ApacheCombined,
+                "apache_common" => app.format.selected_format = LogFormat::ApacheCommon,
+                "apache_error" => app.format.selected_format = LogFormat::ApacheError,
+                "nginx_error" => app.format.selected_format = LogFormat::NginxError,
+                "k8s" | "kubernetes" => app.format.selected_format = LogFormat::Kubernetes,
+                "syslog" | "auth" | "auth.log" => app.format.selected_format = LogFormat::Syslog,
+                "raw" => app.format.selected_format = LogFormat::Raw,
+                _ => {}
+            }
         }
         app.filter.sync_field_filter(
             &app.format.visible_fields,

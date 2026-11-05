@@ -27,9 +27,10 @@ pub fn candidates(input: &str, reader: &LogReader, format: &FormatManager) -> Ve
         }
     }
     let total = reader.line_count();
-    let mut sample = reader.read_range(0, total.min(250));
-    if total > 250 {
-        sample.extend(reader.read_range(total.saturating_sub(250).max(250), 250));
+    let sample_limit = 500;
+    let mut sample = reader.read_range(0, total.min(sample_limit));
+    if total > sample_limit {
+        sample.extend(reader.read_range(total.saturating_sub(sample_limit).max(sample_limit), sample_limit));
     }
     for (_, line) in sample {
         let record = format.parse_line(&line);

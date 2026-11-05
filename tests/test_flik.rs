@@ -1284,3 +1284,43 @@ fn test_nginx_access_log_detection() {
     assert_eq!(rec.get_field_value("user"), Some("john"));
     assert_eq!(rec.status, Some(200));
 }
+
+#[test]
+fn test_stats_summary_full_file_scan_and_sample_toggle() {
+    let mut temp = NamedTempFile::new().unwrap();
+    for i in 0..6000 {
+        if i % 10 == 0 {
+            writeln!(temp, r#"127.0.0.1 - - [26/Oct/2026:12:00:00 +0000] "GET /api/error HTTP/1.1" 500 123 "-" "curl""#).unwrap();
+        } else {
+            writeln!(temp, r#"192.168.1.1 - - [26/Oct/2026:12:00:00 +0000] "GET /api/ok HTTP/1.1" 200 456 "-" "curl""#).unwrap();
+        }
+    }
+    temp.flush().unwrap();
+
+    let (reader, handle) = LogReader::open(temp.path()).unwrap();
+    let start = std::time::Instant::now();
+    while reader.line_count() < 6000 {
+        if start.elapsed() > std::time::Duration::from_secs(5) {
+            panic!("timed out waiting for 6000 lines, got {}", reader.line_count());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    reader.stop();
+    let _ = handle.join();
+
+    // Default sample of 5000 lines
+    let stats_sample = flik::analytics::StatsSummary::compute(&reader, 5000);
+    assert_eq!(stats_sample.total_analyzed, 5000);
+    assert_eq!(stats_sample.total_file_lines, 6000);
+    assert!(!stats_sample.is_full_scan);
+    assert_eq!(stats_sample.status_total, 5000);
+
+    // Full file scan (usize::MAX)
+    let stats_full = flik::analytics::StatsSummary::compute(&reader, usize::MAX);
+    assert_eq!(stats_full.total_analyzed, 6000);
+    assert_eq!(stats_full.total_file_lines, 6000);
+    assert!(stats_full.is_full_scan);
+    assert_eq!(stats_full.status_total, 6000);
+    assert_eq!(stats_full.status_groups[0], 5400); // 2xx: 90%
+    assert_eq!(stats_full.status_groups[3], 600);  // 5xx: 10%
+}

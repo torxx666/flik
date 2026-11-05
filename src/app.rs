@@ -416,7 +416,7 @@ fn is_error_log_line(line: &str) -> bool {
 
         // Live stats auto-refresh while StatsDashboard modal is open
         if let ActiveModal::StatsDashboard { ref mut stats, .. } = self.modal {
-            if self.reader.is_actively_growing() || self.reader.is_tail_enabled() {
+            if (self.reader.is_actively_growing() || self.reader.is_tail_enabled()) && !stats.is_full_scan {
                 let now = Instant::now();
                 let should_refresh = match self.ui_state.last_stats_refresh {
                     Some(last) => now.duration_since(last) >= Duration::from_millis(1000),
@@ -1436,10 +1436,29 @@ fn is_error_log_line(line: &str) -> bool {
                     self.modal = ActiveModal::None;
                 }
                 KeyCode::Char('r') | KeyCode::F(5) => {
-                    *stats = crate::analytics::StatsSummary::compute(&self.reader, 5000);
+                    let sample_size = if stats.is_full_scan { usize::MAX } else { 5000 };
+                    *stats = crate::analytics::StatsSummary::compute(&self.reader, sample_size);
                     self.ui_state.last_stats_refresh = Some(Instant::now());
                     self.ui_state.status_toast = Some((
-                        "Stats refreshed from latest logs".to_string(),
+                        if stats.is_full_scan {
+                            format!("Full file stats refreshed ({} lines)", stats.total_analyzed)
+                        } else {
+                            "Stats refreshed from latest logs".to_string()
+                        },
+                        Instant::now(),
+                    ));
+                }
+                KeyCode::Char('a') | KeyCode::Char('A') => {
+                    let new_full = !stats.is_full_scan;
+                    let sample_size = if new_full { usize::MAX } else { 5000 };
+                    *stats = crate::analytics::StatsSummary::compute(&self.reader, sample_size);
+                    self.ui_state.last_stats_refresh = Some(Instant::now());
+                    self.ui_state.status_toast = Some((
+                        if new_full {
+                            format!("Full file analyzed: {} lines (100%)", stats.total_analyzed)
+                        } else {
+                            format!("Sample mode: analyzed {} lines", stats.total_analyzed)
+                        },
                         Instant::now(),
                     ));
                 }

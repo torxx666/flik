@@ -315,3 +315,21 @@ fn field_completion_can_continue_to_values_and_preserves_quoted_values() {
     ready(&ws.panes[0]);
     assert_eq!(*ws.panes[0].filter.filtered_indices.read(), vec![0]);
 }
+
+#[test]
+fn test_nested_json_completion_and_filtering() {
+    let (_dir, app) = app(
+        "{\"user\":{\"id\":101,\"name\":\"alice\"},\"labels\":{\"env\":\"prod\"}}\n{\"user\":{\"id\":202,\"name\":\"bob\"},\"labels\":{\"env\":\"dev\"}}\n",
+    );
+    // Completion on nested field keys
+    let candidates_user_prefix = completion::candidates("user.", &app.reader, &app.format);
+    assert!(candidates_user_prefix.contains(&"user.id:".to_string()));
+    assert!(candidates_user_prefix.contains(&"user.name:".to_string()));
+
+    // Completion on nested values
+    let candidates_user_id = completion::candidates("user.id:", &app.reader, &app.format);
+    assert_eq!(candidates_user_id, vec!["user.id:101", "user.id:202"]);
+
+    let candidates_labels_env = completion::candidates("labels.env:", &app.reader, &app.format);
+    assert_eq!(candidates_labels_env, vec!["labels.env:dev", "labels.env:prod"]);
+}

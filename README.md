@@ -144,7 +144,7 @@ Shortcuts are case-sensitive. These apply to the main log view unless noted. `1`
 | `6` / `R` / `v` | Select fields / field range / inspect values |
 | `w` | Toggle embedded JSON expansion |
 | `5` / `t` | Toggle live following & real-time stream alerting |
-| `S` / `H` / `P` | Statistics (live auto-refresh) / hourly counts / pattern groups |
+| `S` / `H` / `P` | Statistics dashboard (press `a` for 100% full file scan) / hourly counts / pattern groups |
 | `C` / `Ctrl+R` | Correlate trace ID, UUID, IP or user (`Enter`: Include, `e`: Exclude, `t`: Trace) |
 | `B` / `'` | Bookmark / next bookmark |
 | `D` / `d` | Select two lines for a difference view |
@@ -161,6 +161,28 @@ Shortcuts are case-sensitive. These apply to the main log view unless noted. `1`
 | `Q`, twice `q`, `F10` | Quit |
 
 Filter prompts: `F2` or `Ctrl+R` toggles regex; `F3` or `Ctrl+C` toggles case sensitivity. In a filter prompt, Tab changes include/exclude mode. In a context view, `n`/`p` move between matches.
+
+## Configuration & Custom Formats
+
+Flik automatically loads settings from `~/.config/flik/config.toml` (or `%APPDATA%\flik\config.toml` on Windows) if present:
+
+```toml
+[general]
+mouse_capture = true
+auto_indent_json = true
+reverse_order = false
+theme = "default"         # "default" or "light"
+
+[alerts]
+enabled = false
+threshold = 10
+
+[[formats]]
+name = "my_service"
+pattern = '^\[(?P<timestamp>[^\]]+)\] \[(?P<level>[A-Z]+)\] (?P<message>.*)$'
+```
+
+Custom format definitions can also be placed as standalone files in `~/.config/flik/formats/*.toml` and selected via `--format <name>` or dynamically matched during format discovery.
 
 ## Build and test
 

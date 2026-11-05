@@ -1199,10 +1199,19 @@ impl ModalRenderer {
         let popup_area = Self::centered_rect(75, 65, area);
         Clear.render(popup_area, buf);
 
+        let title = if stats.is_full_scan {
+            format!(" [ 📊 Statistics Dashboard · FULL FILE ({} lines) ] ", stats.total_analyzed)
+        } else {
+            format!(
+                " [ 📊 Statistics Dashboard · Sample ({} lines / {} total) ] ",
+                stats.total_analyzed, stats.total_file_lines
+            )
+        };
+
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(theme.modal_border)
-            .title(" [ 📊 Instant Statistics & Analytics Dashboard ] ")
+            .title(title)
             .title_alignment(Alignment::Center)
             .style(Style::default().bg(theme.modal_bg).fg(theme.fg));
 
@@ -1244,7 +1253,16 @@ impl ModalRenderer {
         match selected_tab {
             0 if stats.status_total == 0 => {
                 let total = stats.total_analyzed.max(1);
-                let mut lines = vec![Line::raw(format!("Analyzed: {} lines (sample, up to 5,000)", stats.total_analyzed))];
+                let mut lines = vec![Line::from(vec![
+                    Span::styled("Analyzed: ", Style::default().fg(Color::Yellow)),
+                    Span::styled(format!("{}", stats.total_analyzed), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                    Span::raw(format!(" / {} lines (", stats.total_file_lines)),
+                    Span::styled(
+                        if stats.is_full_scan { "100% Full File" } else { "Sample: press [a] for full" },
+                        Style::default().fg(if stats.is_full_scan { Color::Green } else { Color::Cyan }).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(")"),
+                ])];
                 for (index, (level, count)) in stats.level_counts.iter().enumerate() {
                     let pct = *count as f64 * 100.0 / total as f64;
                     let color = if index == selected_item { Color::Yellow } else { Color::Cyan };
@@ -1274,7 +1292,12 @@ impl ModalRenderer {
                 lines.push(Line::from(vec![
                     Span::styled("Analyzed: ", Style::default().fg(Color::Yellow)),
                     Span::styled(format!("{}", stats.total_analyzed), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-                    Span::raw("  │  With status: "),
+                    Span::raw(format!(" / {} lines (", stats.total_file_lines)),
+                    Span::styled(
+                        if stats.is_full_scan { "100% Full File" } else { "Sample: press [a] for full" },
+                        Style::default().fg(if stats.is_full_scan { Color::Green } else { Color::Cyan }).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(")  │  With status: "),
                     Span::styled(
                         format!("{}", stats.status_total),
                         Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
@@ -1430,7 +1453,12 @@ impl ModalRenderer {
             Span::raw("  │  "),
             Span::styled("[Enter] Filter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
             Span::raw("  │  "),
-            Span::styled("[r / F5] Refresh", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                if stats.is_full_scan { "[a] Sample (5k)" } else { "[a] Full File (100%)" },
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  │  "),
+            Span::styled("[r] Refresh", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
             Span::raw("  │  "),
             Span::styled("[Esc] Close", Style::default().fg(Color::Gray)),
         ]);

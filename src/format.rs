@@ -418,6 +418,64 @@ pub fn parse_field_selection_query(query: &str, available: &[String]) -> Vec<Str
     result
 }
 
+/// Flatten a JSON value recursively using dot notation (e.g. `user.id`, `kubernetes.labels.app`)
+/// and populate both flattened fields and optional field key sets for indexing and autocompletion.
+pub fn flatten_json_value(
+    prefix: &str,
+    val: &Value,
+    fields: &mut Vec<ParsedField>,
+    mut field_set: Option<&mut std::collections::HashSet<String>>,
+) {
+    if let Value::Object(map) = val {
+        for (k, v) in map {
+            let full_key = if prefix.is_empty() {
+                k.clone()
+            } else {
+                format!("{}.{}", prefix, k)
+            };
+            if let Some(ref mut set) = field_set {
+                set.insert(full_key.clone());
+            }
+            match v {
+                Value::Object(_) => {
+                    let next_set = field_set.as_deref_mut();
+                    flatten_json_value(&full_key, v, fields, next_set);
+                }
+                Value::String(s) => {
+                    fields.push(ParsedField {
+                        key: full_key,
+                        value: s.clone(),
+                    });
+                }
+                Value::Number(n) => {
+                    fields.push(ParsedField {
+                        key: full_key,
+                        value: n.to_string(),
+                    });
+                }
+                Value::Bool(b) => {
+                    fields.push(ParsedField {
+                        key: full_key,
+                        value: b.to_string(),
+                    });
+                }
+                Value::Null => {
+                    fields.push(ParsedField {
+                        key: full_key,
+                        value: "null".into(),
+                    });
+                }
+                Value::Array(_) => {
+                    fields.push(ParsedField {
+                        key: full_key,
+                        value: v.to_string(),
+                    });
+                }
+            }
+        }
+    }
+}
+
 pub struct FormatManager {
     pub selected_format: LogFormat,
     pub detected_format: LogFormat,
@@ -595,19 +653,22 @@ impl FormatManager {
             if (trimmed.starts_with('{') && trimmed.ends_with('}'))
                 || (trimmed.starts_with('[') && trimmed.ends_with(']'))
             {
-                if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) {
-                    json_single_count += 1;
-                    for (k, v) in map {
-                        field_set.insert(k.clone());
-                        if k.eq_ignore_ascii_case("jsonPayload") {
-                            if let Value::Object(inner) = v {
-                                for (ik, _) in inner {
-                                    field_set.insert(ik);
-                                }
+                if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                    if let Value::Object(ref map) = val {
+                        json_single_count += 1;
+                        let mut dummy_fields = Vec::new();
+                        let mut f_set = std::collections::HashSet::new();
+                        flatten_json_value("", &val, &mut dummy_fields, Some(&mut f_set));
+                        for k in f_set {
+                            field_set.insert(k);
+                        }
+                        if let Some(Value::Object(inner)) = map.get("jsonPayload") {
+                            for (ik, _) in inner {
+                                field_set.insert(ik.clone());
                             }
                         }
+                        continue;
                     }
-                    continue;
                 }
             }
 
@@ -627,9 +688,14 @@ impl FormatManager {
                 if let Some(caps) = self.k8s_re.captures(trimmed) {
                     if let Some(inner) = caps.get(4) {
                         let inner_str = inner.as_str().trim();
-                        if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(inner_str) {
-                            for (k, _) in map {
-                                field_set.insert(k);
+                        if let Ok(val) = serde_json::from_str::<Value>(inner_str) {
+                            if let Value::Object(_) = val {
+                                let mut dummy_fields = Vec::new();
+                                let mut f_set = std::collections::HashSet::new();
+                                flatten_json_value("", &val, &mut dummy_fields, Some(&mut f_set));
+                                for k in f_set {
+                                    field_set.insert(k);
+                                }
                             }
                         }
                     }
@@ -924,8 +990,8 @@ impl FormatManager {
             let mut record = ParsedRecord::default();
             let mut fields = Vec::new();
 
-            for (k, v) in map {
-                let str_val = match &v {
+            for (k, v) in &map {
+                let str_val = match v {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
@@ -989,7 +1055,7 @@ impl FormatManager {
                 if k_lower == "jsonpayload" {
                     if let Value::Object(inner) = v {
                         for (ik, iv) in inner {
-                            let istr = match &iv {
+                            let istr = match iv {
                                 Value::String(s) => s.clone(),
                                 Value::Number(n) => n.to_string(),
                                 Value::Bool(b) => b.to_string(),
@@ -1019,7 +1085,7 @@ impl FormatManager {
                                 }
                             }
                             fields.push(ParsedField {
-                                key: ik,
+                                key: ik.clone(),
                                 value: istr,
                             });
                         }
@@ -1028,10 +1094,17 @@ impl FormatManager {
                 }
 
                 fields.push(ParsedField {
-                    key: k,
+                    key: k.clone(),
                     value: str_val,
                 });
             }
+
+            // Also flatten all nested keys recursively (e.g. user.id, kubernetes.labels.app)
+            flatten_json_value("", &Value::Object(map), &mut fields, None);
+
+            // Deduplicate fields while preserving order
+            let mut seen = std::collections::HashSet::new();
+            fields.retain(|f| seen.insert((f.key.clone(), f.value.clone())));
 
             if record.message.is_empty() {
                 record.message = trimmed.to_string();
@@ -1185,8 +1258,8 @@ impl FormatManager {
             let trimmed_msg = msg.trim();
             if trimmed_msg.starts_with('{') {
                 if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed_msg) {
-                    for (k, v) in map {
-                        let str_val = match &v {
+                    for (k, v) in &map {
+                        let str_val = match v {
                             Value::String(s) => s.clone(),
                             Value::Number(n) => n.to_string(),
                             Value::Bool(b) => b.to_string(),
@@ -1204,10 +1277,13 @@ impl FormatManager {
                             }
                         }
                         record.fields.push(ParsedField {
-                            key: k,
+                            key: k.clone(),
                             value: str_val,
                         });
                     }
+                    flatten_json_value("", &Value::Object(map), &mut record.fields, None);
+                    let mut seen = std::collections::HashSet::new();
+                    record.fields.retain(|f| seen.insert((f.key.clone(), f.value.clone())));
                 }
             }
 

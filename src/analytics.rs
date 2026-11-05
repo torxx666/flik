@@ -26,6 +26,8 @@ static CORRELATION_KEY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct StatsSummary {
     pub total_analyzed: usize,
+    pub total_file_lines: usize,
+    pub is_full_scan: bool,
     pub level_counts: BTreeMap<String, usize>,
     pub status_total: usize,
     pub status_counts: BTreeMap<u16, usize>, // e.g. 200 => 450, 500 => 32
@@ -40,13 +42,16 @@ pub struct StatsSummary {
 impl StatsSummary {
     pub fn compute(reader: &LogReader, max_samples: usize) -> Self {
         let total_lines = reader.line_count();
+        if total_lines == 0 {
+            return Self::default();
+        }
         let sample_count = total_lines.min(max_samples).max(1);
-        let start_idx = if reader.is_actively_growing() || reader.is_tail_enabled() {
+        let is_full_scan = sample_count >= total_lines;
+        let start_idx = if !is_full_scan && (reader.is_actively_growing() || reader.is_tail_enabled()) {
             total_lines.saturating_sub(sample_count)
         } else {
             0
         };
-        let lines = reader.read_range(start_idx, sample_count);
 
         let mut level_counts = BTreeMap::new();
         let mut status_counts: HashMap<u16, usize> = HashMap::new();
@@ -56,65 +61,83 @@ impl StatsSummary {
         let mut latencies: Vec<f64> = Vec::new();
 
         let mut format_mgr = FormatManager::new();
-        let sample_texts: Vec<String> = lines.iter().take(50).map(|(_, l)| l.clone()).collect();
-        format_mgr.detect_and_index_fields(&sample_texts);
+        let initial_sample: Vec<String> = reader
+            .read_range(start_idx, 50.min(sample_count))
+            .into_iter()
+            .map(|(_, l)| l)
+            .collect();
+        format_mgr.detect_and_index_fields(&initial_sample);
 
-        for (_, line) in &lines {
-            let record = format_mgr.parse_line(line);
+        let chunk_size = 5000;
+        let mut processed = 0;
+        let mut total_analyzed = 0;
 
-            if let Some(level) = record.level.as_deref() {
-                *level_counts.entry(level.to_uppercase()).or_insert(0) += 1;
+        while processed < sample_count {
+            let to_read = (sample_count - processed).min(chunk_size);
+            let lines = reader.read_range(start_idx + processed, to_read);
+            if lines.is_empty() {
+                break;
             }
-            // 1. Status code
-            if let Some(status) = record.status {
-                *status_counts.entry(status).or_insert(0) += 1;
-            }
+            total_analyzed += lines.len();
 
-            // 2. IP address
-            if let Some(ip) = record.get_field_value("ip").or_else(|| record.get_field_value("client_ip")) {
-                if !ip.is_empty() && ip != "-" {
-                    *ip_counts.entry(ip.to_string()).or_insert(0) += 1;
+            for (_, line) in &lines {
+                let record = format_mgr.parse_line(line);
+
+                if let Some(level) = record.level.as_deref() {
+                    *level_counts.entry(level.to_uppercase()).or_insert(0) += 1;
                 }
-            } else if let Some(m) = IPV4_RE.find(line) {
-                *ip_counts.entry(m.as_str().to_string()).or_insert(0) += 1;
-            }
+                // 1. Status code
+                if let Some(status) = record.status {
+                    *status_counts.entry(status).or_insert(0) += 1;
+                }
 
-            // 3. Endpoint / Request
-            if let Some(req) = record.get_field_value("request").or_else(|| record.get_field_value("path")) {
-                let clean_req = req.split_whitespace().nth(1).unwrap_or(req);
-                *endpoint_counts.entry(clean_req.to_string()).or_insert(0) += 1;
-            }
+                // 2. IP address
+                if let Some(ip) = record.get_field_value("ip").or_else(|| record.get_field_value("client_ip")) {
+                    if !ip.is_empty() && ip != "-" {
+                        *ip_counts.entry(ip.to_string()).or_insert(0) += 1;
+                    }
+                } else if let Some(m) = IPV4_RE.find(line) {
+                    *ip_counts.entry(m.as_str().to_string()).or_insert(0) += 1;
+                }
 
-            // 4. Errors
-            let is_error_level = record.level.as_deref().is_some_and(|level| {
-                level.eq_ignore_ascii_case("ERROR")
-                    || level.eq_ignore_ascii_case("FATAL")
-                    || level.eq_ignore_ascii_case("CRITICAL")
-                    || level.eq_ignore_ascii_case("CRIT")
-                    || level.eq_ignore_ascii_case("ERR")
-                    || level.eq_ignore_ascii_case("ALERT")
-                    || level.eq_ignore_ascii_case("EMERG")
-                    || level.eq_ignore_ascii_case("EMERGENCY")
-            });
-            let is_server_error = record.status.is_some_and(|status| status >= 500);
-            if is_error_level || is_server_error {
-                let err_msg = record
-                    .get_field_value("error")
-                    .or_else(|| record.get_field_value("msg"))
-                    .or_else(|| record.get_field_value("message"))
-                    .unwrap_or(&record.message);
-                let short_err: String = err_msg.chars().take(120).collect();
-                if !short_err.trim().is_empty() {
-                    *error_counts.entry(short_err).or_insert(0) += 1;
+                // 3. Endpoint / Request
+                if let Some(req) = record.get_field_value("request").or_else(|| record.get_field_value("path")) {
+                    let clean_req = req.split_whitespace().nth(1).unwrap_or(req);
+                    *endpoint_counts.entry(clean_req.to_string()).or_insert(0) += 1;
+                }
+
+                // 4. Errors
+                let is_error_level = record.level.as_deref().is_some_and(|level| {
+                    level.eq_ignore_ascii_case("ERROR")
+                        || level.eq_ignore_ascii_case("FATAL")
+                        || level.eq_ignore_ascii_case("CRITICAL")
+                        || level.eq_ignore_ascii_case("CRIT")
+                        || level.eq_ignore_ascii_case("ERR")
+                        || level.eq_ignore_ascii_case("ALERT")
+                        || level.eq_ignore_ascii_case("EMERG")
+                        || level.eq_ignore_ascii_case("EMERGENCY")
+                });
+                let is_server_error = record.status.is_some_and(|status| status >= 500);
+                if is_error_level || is_server_error {
+                    let err_msg = record
+                        .get_field_value("error")
+                        .or_else(|| record.get_field_value("msg"))
+                        .or_else(|| record.get_field_value("message"))
+                        .unwrap_or(&record.message);
+                    let short_err: String = err_msg.chars().take(120).collect();
+                    if !short_err.trim().is_empty() {
+                        *error_counts.entry(short_err).or_insert(0) += 1;
+                    }
+                }
+
+                // 5. Latency / duration_ms
+                if let Some(dur_str) = record.get_field_value("duration_ms").or_else(|| record.get_field_value("latency")) {
+                    if let Ok(val) = dur_str.parse::<f64>() {
+                        latencies.push(val);
+                    }
                 }
             }
-
-            // 5. Latency / duration_ms
-            if let Some(dur_str) = record.get_field_value("duration_ms").or_else(|| record.get_field_value("latency")) {
-                if let Ok(val) = dur_str.parse::<f64>() {
-                    latencies.push(val);
-                }
-            }
+            processed += lines.len();
         }
 
         // Aggregate 2xx, 3xx, 4xx, 5xx
@@ -155,7 +178,9 @@ impl StatsSummary {
         let sorted_status: BTreeMap<u16, usize> = status_counts.into_iter().collect();
 
         Self {
-            total_analyzed: lines.len(),
+            total_analyzed,
+            total_file_lines: total_lines,
+            is_full_scan,
             level_counts,
             status_total,
             status_counts: sorted_status,
