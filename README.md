@@ -8,7 +8,17 @@ Open local files or piped streams, inspect structured fields, stack filters and 
 
 ## Install without building
 
-Download the archive matching your platform from [GitHub Releases](https://github.com/torxx666/flik/releases/latest), verify its hash against `SHA256SUMS`, then extract it. Each archive contains `flik` and `LICENSE`.
+### Homebrew (macOS & Linux)
+
+The fastest and recommended way to install and update Flik:
+
+```sh
+brew install torxx666/tap/flik
+```
+
+### Prebuilt Binaries
+
+Download the archive matching your platform from [GitHub Releases](https://github.com/torxx666/flik/releases/latest), verify its hash against `SHA256SUMS`, then extract it. Each archive contains `flik` (or `flik.exe`) and `LICENSE`.
 
 | Platform | Release target |
 | --- | --- |
@@ -16,14 +26,12 @@ Download the archive matching your platform from [GitHub Releases](https://githu
 | macOS Intel | `x86_64-apple-darwin` |
 | Linux ARM64 | `aarch64-unknown-linux-musl` |
 | Linux x86-64 | `x86_64-unknown-linux-musl` |
+| Windows x86-64 | `x86_64-pc-windows-msvc` |
 
 An installer can detect the platform and install into `~/.local/bin`:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -fL \
-  https://raw.githubusercontent.com/torxx666/flik/v0.1.0/scripts/install.sh \
-  -o install-flik.sh
-FLIK_REPO=torxx666/flik sh install-flik.sh
+curl -fsSL https://raw.githubusercontent.com/torxx666/flik/main/scripts/install.sh | bash
 ```
 
 The installer checks the download's SHA-256 and executable version. It uses no sudo and refuses existing files by default. To intentionally update an existing installation, set `FLIK_FORCE=1`. See [installation details](docs/RELEASING.md) for pinned versions and custom destinations.
@@ -32,7 +40,7 @@ macOS binaries require macOS 11 or later and are currently not Developer ID sign
 ```sh
 xattr -d com.apple.quarantine ./flik
 ```
-Windows support runs via WSL2 (native Windows binary target is planned for release).
+Windows builds run natively on 64-bit Windows 10/11 (`flik.exe`) or via WSL2.
 
 ## Performance & Scalability
 
