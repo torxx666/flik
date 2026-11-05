@@ -3,12 +3,13 @@
 A dependency-free static site in `dist/`, designed for `https://flik.spedo.dev`.
 The indigo / steel engineering identity with amber calls to action, SVG mark, wordmark and social image live in `dist/assets/`.
 The landing page identifies Flik as a terminal log analyzer immediately and shows the actual interface. Format support, six investigation features, six executable workflow examples, a grouped keyboard reference and Ctrl+K command reference are included. Examples distinguish shell commands from in-app prompts. The jq comparison is scoped to interactive inspection, not JSON transformation or scripting. Synthetic JSON, Kubernetes/CRI and Nginx samples are downloadable from `dist/assets/samples/`.
-The website, metadata, accessibility labels, videos and captions are English-only. Fonts and videos are self-hosted; the page has no analytics, third-party video player or external font request.
+The website, metadata, accessibility labels, videos and captions are English-only. Fonts and videos are self-hosted; the static bundle has no third-party video player or external font request. The current origin injects the existing cookie-free, first-party Tracer collector without a visible public dashboard link.
 
 ## Preview and checks
 
 ```sh
 python3 -m http.server 4173 --bind 127.0.0.1 --directory website/dist
+python3 website/scripts/build_guides.py website/content/guides.json website/dist
 python3 website/scripts/check_site.py
 ```
 
@@ -35,3 +36,19 @@ Upload the contents of `dist/` to any static host (including Cloudflare Pages or
 A private Sites preview is also prepared using the local `.openai/hosting.json`. Keep that local deployment identity out of the public source export. Custom-domain DNS values must come from the chosen host; do not guess a CNAME. The canonical URL, social metadata and sitemap already target `https://flik.spedo.dev`.
 
 The website supports 320 px through desktop layouts, reduced motion, visible keyboard focus, keyboard tab navigation for demos, and copy-command fallback. Browser QA verified the three MP4s play, English-only copy, platform selection, and the unreleased-download state. Frequency reports use UTC; S statistics use an explicitly stated 5,000-line sample.
+
+## Deploy to an existing Nginx server
+
+```sh
+python3 website/scripts/deploy_server.py user@host
+```
+
+This runs the static-site checks, transfers only `dist/`, verifies the archive hash, and installs a versioned release under `/var/www/flik/releases/`. It atomically points `/var/www/flik/current` at the release and installs the dedicated `flik.spedo.dev` virtual host only on first setup; an existing live virtual host is preserved from `website/deploy/nginx.conf`.
+
+The target must already use Nginx and public HTTPS termination at its edge proxy. This origin configuration listens on port 80, matching that deployment model. The deployer validates Nginx before a graceful reload, waits for the new workers, verifies the served page hash, checks GitHub configuration and MP4 byte ranges, and rolls back its own changes on failure. Deployment state is kept outside the public document root under `/var/www/flik/deployments/`.
+
+The script accepts the SSH destination explicitly; no server address, SSH key or DNS credential is embedded in the public source. The existing owner-private Sites preview remains a separate hosting option.
+
+## Search-oriented content
+
+Four practical guides and a guide index are generated from `website/content/guides.json`. They cover Kubernetes JSON, error context, Nginx hourly counts and the scope of Flik versus grep/jq. Canonicals, article metadata, internal links and sitemap URLs are included. The homepage proof uses a five-request synthetic file with two server errors; it is a correctness example, not a performance benchmark.

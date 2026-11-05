@@ -28,23 +28,47 @@ FLIK_REPO=torxx666/flik sh install-flik.sh
 
 The installer checks the download's SHA-256 and executable version. It uses no sudo and refuses existing files by default. To intentionally update an existing installation, set `FLIK_FORCE=1`. See [installation details](docs/RELEASING.md) for pinned versions and custom destinations.
 
-macOS binaries require macOS 11 or later and are currently not Developer ID signed or notarized. Native Windows binaries are not provided yet.
+macOS binaries require macOS 11 or later and are currently not Developer ID signed. If Gatekeeper displays a warning on macOS, unquarantine the binary with:
+```sh
+xattr -d com.apple.quarantine ./flik
+```
+Windows support runs via WSL2 (native Windows binary target is planned for release).
+
+## Performance & Scalability
+
+Flik is designed for multi-gigabyte log analysis without memory bloat:
+* **$O(1)$ Direct Seeks**: Instant random navigation across millions of lines via a lightweight byte-offset index (~8 bytes per line).
+* **Zero UI Blocking**: Asynchronous background indexing ensures the TUI opens instantly and remains 60 fps responsive.
+* **Bounded Resource Usage**: 10 million lines consume ~80 MB of RAM, leaving memory free for your workloads.
 
 ## Start an investigation
 
 ```sh
 flik app.log
 flik api.log worker.log
+flik /var/log/auth.log
+flik --format logfmt app.log
+flik --format-regex '^(?P<ip>\S+) (?P<user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d{3}) (?P<latency>[\d\.]+)$' access.log
 flik --table --fields timestamp,service,message app.jsonl
 docker logs -f demo-api | flik -
 kubectl logs -f deployment/demo-api | flik -
+aws logs tail /aws/lambda/demo-api --follow | flik -
+gcloud logging tail "resource.type=k8s_container" --format=json | flik -
 ```
 
 Files open at the end with live following enabled. Each of the two available panes has independent filters, fields and navigation.
 
-Supported detection includes JSON/NDJSON, Kubernetes/CRI-style records with embedded JSON, Apache and Nginx Common/Combined access logs, Apache error logs, Nginx error logs, traditional Syslog and raw text. Custom layouts may use raw-text mode.
+Supported formats and detection:
+* **JSON / NDJSON**: Automatic field indexing, nested JSON expansion, and coloration.
+* **AWS CloudWatch**: Native support for `@message`, `@logStream`, `@timestamp`, epoch milliseconds conversion, and `aws logs tail ... | flik -`.
+* **Google Cloud Logging (Stackdriver)**: Automatic `severity` mapping, `textPayload`, nested `jsonPayload` field flattening, and `gcloud logging tail ... | flik -`.
+* **Logfmt (`key=value`)**: Key-value pair extraction, log level and HTTP status recognition.
+* **Syslog & Auth (`/var/log/auth.log`, `secure`, `sshd`, `sudo`, `PAM`)**: Enriched security fields (`user`, `ip`, `action`, `auth_status`, `command`).
+* **HTTP Access Logs (Apache & Nginx)**: Combined, Common, virtual hosts (`vhost`), and custom trailing latency metrics (`request_time`).
+* **Custom Regex Patterns**: Pass `--format-regex` with named capture groups `(?P<name>...)` to map any custom log structure into interactive columns and filters.
+* **Kubernetes / CRI-O**: Automatic embedded JSON extraction with `w`.
 
-Flik covers interactive log filtering, field inspection, context and following. Keep tools such as jq for arbitrary JSON transformations and scripted pipelines; Flik does not execute jq expressions.
+Flik focuses on interactive incident cockpit analysis, fast temporal correlation (`compare`, `trace`), and split-pane navigation. Keep tools such as `jq` for batch JSON scripting, and `lnav` for complex SQL database queries across files.
 
 ## Search, stack filters, undo
 
@@ -111,9 +135,9 @@ Shortcuts are case-sensitive. These apply to the main log view unless noted. `1`
 | `Tab` / `4` | Line / table view |
 | `6` / `R` / `v` | Select fields / field range / inspect values |
 | `w` | Toggle embedded JSON expansion |
-| `5` / `t` | Toggle live following |
-| `S` / `H` / `P` | Statistics / hourly counts / pattern groups |
-| `C` / `Ctrl+R` | Discover an ID / trace across files |
+| `5` / `t` | Toggle live following & real-time stream alerting |
+| `S` / `H` / `P` | Statistics (live auto-refresh) / hourly counts / pattern groups |
+| `C` / `Ctrl+R` | Correlate trace ID, UUID, IP or user (`Enter`: Include, `e`: Exclude, `t`: Trace) |
 | `B` / `'` | Bookmark / next bookmark |
 | `D` / `d` | Select two lines for a difference view |
 | `Ctrl+G` / `Ctrl+T` / `Ctrl+L` | Context / time range / merged chronology |

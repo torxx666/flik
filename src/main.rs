@@ -14,8 +14,8 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(name = "flik")]
 #[command(author = "Flik Team")]
-#[command(version = "0.1.0")]
-#[command(about = "Ultra-fast log analyzer (Apache, K8s, JSON) inspired by Norton Commander", long_about = None)]
+#[command(version)]
+#[command(about = "Ultra-fast log analyzer (Apache, K8s, JSON, Logfmt, Auth/Syslog) inspired by Norton Commander", long_about = None)]
 struct Cli {
     /// Log file to analyze
     #[arg(value_name = "FILE")]
@@ -37,9 +37,13 @@ struct Cli {
     #[arg(short = 'c', long = "fields")]
     fields: Option<String>,
 
-    /// Force log format (json, apache, apache_error, k8s, syslog, raw)
+    /// Force log format (json, logfmt, apache, apache_error, k8s, syslog, raw)
     #[arg(long = "format")]
     format: Option<String>,
+
+    /// Custom regex format with named capture groups (e.g. "(?P<ip>\S+) (?P<status>\d+)")
+    #[arg(long = "format-regex")]
+    format_regex: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -79,6 +83,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         cli.file.clone()
     };
+
+    #[cfg(not(unix))]
+    if is_stdin {
+        eprintln!("Error: Direct piped stdin is currently supported on Unix/macOS.");
+        std::process::exit(1);
+    }
 
     #[cfg(unix)]
     let stop_pipe_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -225,15 +235,27 @@ fn configure_app(app: &mut App, cli: &Cli, is_stdin: bool) {
     if cli.table {
         app.format.view_mode = ViewMode::ColumnsTable;
     }
-    if let Some(ref fmt) = cli.format {
+    if let Some(ref re_str) = cli.format_regex {
+        if let Err(e) = app.format.set_custom_regex(re_str) {
+            eprintln!("Error compiling custom regex: {}", e);
+            std::process::exit(1);
+        }
+        app.filter.sync_field_filter(
+            &app.format.visible_fields,
+            &app.format.available_fields,
+            false,
+            &app.reader,
+        );
+    } else if let Some(ref fmt) = cli.format {
         match fmt.to_lowercase().as_str() {
             "json" => app.format.selected_format = LogFormat::Json,
+            "logfmt" => app.format.selected_format = LogFormat::Logfmt,
             "nginx" | "nginx_access" | "apache" | "apache_combined" => app.format.selected_format = LogFormat::ApacheCombined,
             "apache_common" => app.format.selected_format = LogFormat::ApacheCommon,
             "apache_error" => app.format.selected_format = LogFormat::ApacheError,
             "nginx_error" => app.format.selected_format = LogFormat::NginxError,
             "k8s" | "kubernetes" => app.format.selected_format = LogFormat::Kubernetes,
-            "syslog" => app.format.selected_format = LogFormat::Syslog,
+            "syslog" | "auth" | "auth.log" => app.format.selected_format = LogFormat::Syslog,
             "raw" => app.format.selected_format = LogFormat::Raw,
             _ => {}
         }

@@ -26,7 +26,7 @@ with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         if path.suffix in {'.rs', '.py', '.sh', '.md', '.yml', '.toml', '.json', '.log', '.html', '.css', '.js', '.txt'}:
             text = data.decode('utf-8')
             # These existing demo domains are placeholders, never links to a third-party site.
-            text = text.replace('example.test', 'example.test')
+            text = text.replace('flik.io', 'example.test')
             assert not re.search(r'(?i)(?:ghp_|github_pat_)[a-z0-9_]{20,}', text), f'Credential pattern: {relative}'
             assert not re.search(r'/Users/[A-Za-z0-9_.-]+/', text), f'Personal path: {relative}'
             data = text.encode()

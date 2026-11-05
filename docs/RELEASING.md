@@ -24,8 +24,8 @@ Windows binaries are not advertised or published by this workflow. Some file-vie
 5. Create and push the matching stable tag:
 
    ```sh
-   git tag -a v0.1.0 -m 'Flik v0.1.0'
-   git push origin v0.1.0
+   git tag -a v0.2.0 -m 'Flik v0.2.0'
+   git push origin v0.2.0
    ```
 
 6. The tag triggers four native builds. Every target runs `cargo test --locked --all-targets` and `cargo build --locked --release`, then verifies `flik --version`. The release job starts only after all four builds succeed.
@@ -44,10 +44,10 @@ Download the installer from a reviewed release tag, inspect it, then run it:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -fL \
-  https://raw.githubusercontent.com/torxx666/flik/v0.1.0/scripts/install.sh \
+  https://raw.githubusercontent.com/torxx666/flik/v0.2.0/scripts/install.sh \
   -o install-flik.sh
 # Read install-flik.sh before running it.
-FLIK_REPO=torxx666/flik FLIK_VERSION=v0.1.0 sh install-flik.sh
+FLIK_REPO=torxx666/flik FLIK_VERSION=v0.2.0 sh install-flik.sh
 ```
 
 To resolve the latest published stable release instead:
@@ -74,13 +74,13 @@ From GitHub Releases, download the archive matching the platform table plus `SHA
 
 ```sh
 # Linux x86-64, after downloading these two files into the current directory:
-grep '  flik-v0.1.0-x86_64-unknown-linux-musl.tar.gz$' SHA256SUMS | sha256sum --check -
-tar -xzf flik-v0.1.0-x86_64-unknown-linux-musl.tar.gz
+grep '  flik-v0.2.0-x86_64-unknown-linux-musl.tar.gz$' SHA256SUMS | sha256sum --check -
+tar -xzf flik-v0.2.0-x86_64-unknown-linux-musl.tar.gz
 ./flik --version
 ./flik /path/to/app.log
 ```
 
-On macOS, use `shasum -a 256 flik-v0.1.0-aarch64-apple-darwin.tar.gz` and compare its full hash with the corresponding line in `SHA256SUMS` before extracting. Substitute the Intel suffix on Intel Macs.
+On macOS, use `shasum -a 256 flik-v0.2.0-aarch64-apple-darwin.tar.gz` and compare its full hash with the corresponding line in `SHA256SUMS` before extracting. If Gatekeeper blocks the downloaded binary, unquarantine it with `xattr -d com.apple.quarantine ./flik`. Substitute the Intel suffix on Intel Macs.
 
 A checksum fetched from the same release detects corruption or mismatched assets. It is **not** an independent publisher signature. Code signing and signed attestations can be added later; do not describe the current builds as notarized, signed by a verified publisher, or independently reproducible.
 

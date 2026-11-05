@@ -51,15 +51,14 @@ function renderInstall(){
  const download=$('download-binary');const asset=release?.assets?.find(asset=>asset.name===filename);
  const validAsset=asset&&asset.browser_download_url===`https://github.com/${repository}/releases/download/${version}/${filename}`;
  download.setAttribute('aria-disabled',String(!validAsset));
- if(validAsset){download.href=asset.browser_download_url;download.querySelector('span').textContent='Download Flik';download.setAttribute('download','');}
- else{download.removeAttribute('href');download.querySelector('span').textContent='Binary available with the first release';}
+ if(validAsset){download.href=asset.browser_download_url;download.querySelector('span').textContent='Download Flik';download.setAttribute('download','');download.setAttribute('aria-disabled','false');}
+ else{download.href=`https://github.com/${repository}/releases/latest`;download.querySelector('span').textContent='Download from GitHub';download.setAttribute('aria-disabled','false');}
  const checksums=release?.assets?.find(asset=>asset.name==='SHA256SUMS');
  const checksumURL=`https://github.com/${repository}/releases/download/${version}/SHA256SUMS`;
  $('checksum-link').hidden=!(checksums&&checksums.browser_download_url===checksumURL);
  if(!$('checksum-link').hidden)$('checksum-link').href=checksumURL;
  $('release-version').textContent=release?.tag_name||'RELEASES';
- $('release-status').textContent=release?`Release ${version} · macOS & Linux`:repository?'No public release detected yet':'First public release being prepared';
- $('installer-box').hidden=!release;$('installer-note').hidden=!!release;
+ $('release-status').textContent=release?`Release ${version} · macOS, Linux & Windows`:repository?'Releases available on GitHub':'Checking latest release...';
  if(release){$('installer-command').textContent=`curl -fsSL https://raw.githubusercontent.com/${repository}/${version}/scripts/install.sh -o install-flik.sh\nFLIK_REPO=${repository} sh install-flik.sh`;}
 }
 document.querySelectorAll('[data-target]').forEach(button=>button.addEventListener('click',()=>{selectedTarget=button.dataset.target;renderInstall();}));
@@ -70,7 +69,7 @@ document.querySelectorAll('[data-copy]').forEach(button=>button.addEventListener
  try{if(!navigator.clipboard)throw new Error('clipboard unavailable');await navigator.clipboard.writeText(text);toast('Commands copied.');}
  catch{const selection=window.getSelection(),range=document.createRange();range.selectNodeContents($(button.dataset.copy));selection.removeAllRanges();selection.addRange(range);toast('Text selected. Copy it using your keyboard.');}
 }));
-$('download-binary').addEventListener('click',event=>{if(event.currentTarget.getAttribute('aria-disabled')==='true'){event.preventDefault();toast('The first public release is being prepared.');}});
+$('download-binary').addEventListener('click',event=>{if(event.currentTarget.getAttribute('aria-disabled')==='true'){event.preventDefault();window.open(`https://github.com/${repository}/releases/latest`,'_blank');}});
 async function getJSON(url){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);try{const response=await fetch(url,{signal:controller.signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error(`HTTP ${response.status}`);return await response.json();}finally{clearTimeout(timeout);}}
 async function loadRelease(){
  try{const config=await getJSON('site-config.json');

@@ -101,7 +101,7 @@ fn test_format_detection_and_parsing() {
 
     // Test Apache Combined Detection
     let apache_samples = vec![
-        r#"192.168.1.1 - admin [16/Oct/2026:10:00:00 +0000] "GET /api/v1/health HTTP/1.1" 200 456 "https://example.test" "Mozilla/5.0""#.to_string(),
+        r#"192.168.1.1 - admin [16/Oct/2026:10:00:00 +0000] "GET /api/v1/health HTTP/1.1" 200 456 "https://flik.io" "Mozilla/5.0""#.to_string(),
         r#"192.168.1.2 - - [16/Oct/2026:10:00:02 +0000] "POST /login HTTP/1.1" 401 128 "-" "curl/8.0""#.to_string(),
     ];
     format_mgr.detect_and_index_fields(&apache_samples);
@@ -1232,8 +1232,8 @@ fn test_nginx_error_log_detection_and_parsing() {
     use flik::analytics::extract_timestamp;
 
     let lines = vec![
-        r#"2026/10/26 11:00:23 [warn] 4547#0: *63068 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 82.165.197.1, server: cdn.example.test, request: "GET /api/v1/users/profile HTTP/1.1", host: "cdn.example.test""#.to_string(),
-        r#"2026/10/26 11:00:24 [error] 2824#0: *86037 connect() failed (111: Connection refused) while connecting to upstream, client: 10.0.4.25, server: api.example.test, request: "POST /api/v1/auth/token/refresh HTTP/1.1", upstream: "http://127.0.0.1:8080/api/v1/auth/token/refresh", host: "api.example.test""#.to_string(),
+        r#"2026/10/26 11:00:23 [warn] 4547#0: *63068 upstream timed out (110: Connection timed out) while reading response header from upstream, client: 82.165.197.1, server: cdn.flik.io, request: "GET /api/v1/users/profile HTTP/1.1", host: "cdn.flik.io""#.to_string(),
+        r#"2026/10/26 11:00:24 [error] 2824#0: *86037 connect() failed (111: Connection refused) while connecting to upstream, client: 10.0.4.25, server: api.flik.io, request: "POST /api/v1/auth/token/refresh HTTP/1.1", upstream: "http://127.0.0.1:8080/api/v1/auth/token/refresh", host: "api.flik.io""#.to_string(),
     ];
 
     let mut mgr = FormatManager::new();
@@ -1244,9 +1244,9 @@ fn test_nginx_error_log_detection_and_parsing() {
     assert_eq!(rec0.timestamp, Some("2026/10/26 11:00:23".to_string()));
     assert_eq!(rec0.level, Some("WARN".to_string()));
     assert_eq!(rec0.get_field_value("client"), Some("82.165.197.1"));
-    assert_eq!(rec0.get_field_value("server"), Some("cdn.example.test"));
+    assert_eq!(rec0.get_field_value("server"), Some("cdn.flik.io"));
     assert_eq!(rec0.get_field_value("request"), Some("GET /api/v1/users/profile HTTP/1.1"));
-    assert_eq!(rec0.get_field_value("host"), Some("cdn.example.test"));
+    assert_eq!(rec0.get_field_value("host"), Some("cdn.flik.io"));
     assert_eq!(rec0.get_field_value("cid"), Some("63068"));
     assert_eq!(rec0.get_field_value("pid"), Some("4547"));
     assert_eq!(
@@ -1271,8 +1271,8 @@ fn test_nginx_access_log_detection() {
     use flik::format::{FormatManager, LogFormat};
 
     let lines = vec![
-        r#"172.16.8.99 - john [26/Oct/2026:11:00:23 +0200] "GET /v1/payments/intent/verify HTTP/1.1" 200 12137 "https://example.test/app" "curl/8.4.0""#.to_string(),
-        r#"10.0.8.44 - alice [26/Oct/2026:11:00:24 +0200] "GET /api/v1/orders/checkout HTTP/1.1" 200 1303 "https://example.test/app" "Mozilla/5.0""#.to_string(),
+        r#"172.16.8.99 - john [26/Oct/2026:11:00:23 +0200] "GET /v1/payments/intent/verify HTTP/1.1" 200 12137 "https://flik.io/app" "curl/8.4.0""#.to_string(),
+        r#"10.0.8.44 - alice [26/Oct/2026:11:00:24 +0200] "GET /api/v1/orders/checkout HTTP/1.1" 200 1303 "https://flik.io/app" "Mozilla/5.0""#.to_string(),
     ];
 
     let mut mgr = FormatManager::new();

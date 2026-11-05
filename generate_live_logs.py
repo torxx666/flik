@@ -80,7 +80,7 @@ REQUEST_PROFILES = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0",
         ],
-        "referers": ["https://example.test/app", "https://example.test/dashboard"],
+        "referers": ["https://flik.io/app", "https://flik.io/dashboard"],
         "weight": 25,
     },
     # 2. Monitoring & Healthchecks (Prometheus / Datadog - 15% traffic)
@@ -117,7 +117,7 @@ REQUEST_PROFILES = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "PostmanRuntime/7.36.0",
         ],
-        "referers": ["https://example.test/app"],
+        "referers": ["https://flik.io/app"],
         "weight": 25,
     },
     # 5. Authenticated Write APIs (Order checkout, Payment verification - 15% traffic)
@@ -132,7 +132,7 @@ REQUEST_PROFILES = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
             "curl/8.4.0",
         ],
-        "referers": ["https://example.test/app"],
+        "referers": ["https://flik.io/app"],
         "weight": 15,
     },
     # 6. Cart Mutations (PUT / DELETE - 5% traffic)
@@ -146,7 +146,7 @@ REQUEST_PROFILES = [
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         ],
-        "referers": ["https://example.test/app"],
+        "referers": ["https://flik.io/app"],
         "weight": 5,
     },
     # 7. Token Refresh / Auth (5% traffic)
@@ -160,7 +160,7 @@ REQUEST_PROFILES = [
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         ],
-        "referers": ["https://example.test/app"],
+        "referers": ["https://flik.io/app"],
         "weight": 5,
     },
     # 8. Suspicious / Security probes (Admin scanner - 5% traffic)
@@ -247,7 +247,7 @@ def gen_nginx_error() -> str:
     tid = random.randint(0, 9)
     conn = random.randint(1000, 99999)
     client = random.choice(IPS)
-    server = random.choice(["api.example.test", "cdn.example.test", "auth.example.test"])
+    server = random.choice(["api.flik.io", "cdn.flik.io", "auth.flik.io"])
 
     err_scenarios = [
         (
@@ -347,15 +347,136 @@ def gen_json() -> str:
     return json.dumps(entry)
 
 
+def gen_syslog_auth() -> str:
+    now = datetime.now()
+    ts = now.strftime("%b %d %H:%M:%S")
+    host = "bastion-prod-01"
+    pid = random.randint(1000, 65535)
+    ip = random.choice(IPS)
+    user = random.choice(["root", "admin", "ubuntu", "deploy", "guest", "alice", "bob", "scanner"])
+    port = random.randint(1024, 65535)
+
+    ev_type = random.random()
+    if ev_type < 0.40:
+        return f"{ts} {host} sshd[{pid}]: Failed password for invalid user {user} from {ip} port {port} ssh2"
+    elif ev_type < 0.65:
+        return f"{ts} {host} sshd[{pid}]: Accepted publickey for {user} from {ip} port {port} ssh2: RSA SHA256:{random.getrandbits(64):016x}"
+    elif ev_type < 0.85:
+        cmd = random.choice(["/bin/systemctl restart nginx", "/usr/bin/apt update", "/bin/cat /etc/shadow", "/bin/journalctl -u docker"])
+        return f"{ts} {host} sudo:    {user} : TTY=pts/{random.randint(0, 4)} ; PWD=/home/{user} ; USER=root ; COMMAND={cmd}"
+    else:
+        return f"{ts} {host} sshd[{pid}]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost={ip}  user={user}"
+
+
+def gen_logfmt() -> str:
+    now = datetime.now(timezone.utc).isoformat()
+    service = random.choice(SERVICES)
+    level = random.choices(["info", "warn", "error"], weights=[0.7, 0.2, 0.1])[0]
+    duration = f"{random.randint(5, 800)}ms"
+    status = random.choices([200, 201, 400, 404, 500, 502], weights=[0.7, 0.1, 0.05, 0.05, 0.05, 0.05])[0]
+    msg = random.choice(["request completed", "cache hit", "payment processed", "database query slow", "upstream timeout"])
+    user_id = random.randint(100, 9999)
+    return f'time="{now}" level={level} service={service} status={status} duration={duration} user_id={user_id} msg="{msg}"'
+
+
+def gen_cloudwatch() -> str:
+    now = datetime.now(timezone.utc)
+    epoch_ms = int(now.timestamp() * 1000)
+    stream_id = f"2026/11/05/[$LATEST]{random.getrandbits(32):08x}"
+    trace_id = f"1-{random.getrandbits(32):08x}-{random.getrandbits(96):024x}"
+
+    rand = random.random()
+    if rand < 0.65:
+        status = 200
+        msg = f"REPORT RequestId: {random.getrandbits(64):016x} Duration: {random.uniform(5.0, 120.0):.2f} ms Billed Duration: 100 ms Memory Size: 512 MB Max Memory Used: 78 MB"
+        level = "info"
+    elif rand < 0.85:
+        status = 404
+        msg = f"WARN Request validation failed for resource /v1/items/{random.randint(100, 999)} - TraceId={trace_id}"
+        level = "warn"
+    else:
+        status = random.choice([500, 502, 503, 504])
+        err = random.choice(ERROR_MESSAGES)
+        msg = f"ERROR Task timed out after 30.00 seconds: {err} - TraceId={trace_id}"
+        level = "error"
+
+    entry = {
+        "@timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "timestamp": epoch_ms,
+        "@message": msg,
+        "@logStream": stream_id,
+        "logStreamName": stream_id,
+        "status": status,
+        "level": level,
+        "trace_id": trace_id,
+    }
+    return json.dumps(entry)
+
+
+def gen_gcp() -> str:
+    now = datetime.now(timezone.utc)
+    insert_id = f"gcp-{random.getrandbits(48):012x}"
+    trace_id = f"00-{random.getrandbits(64):016x}{random.getrandbits(64):016x}-{random.getrandbits(64):016x}-01"
+
+    rand = random.random()
+    if rand < 0.65:
+        severity = "INFO"
+        status = 200
+        msg = "GET /api/v2/inventory HTTP/1.1 200 OK"
+    elif rand < 0.85:
+        severity = "WARNING"
+        status = random.choice([401, 403, 429])
+        msg = f"Rate limit reached for client IP {random.choice(IPS)}"
+    else:
+        severity = random.choice(["ERROR", "CRITICAL"])
+        status = random.choice([500, 503, 504])
+        msg = random.choice(ERROR_MESSAGES)
+
+    use_json_payload = random.random() < 0.6
+    entry = {
+        "insertId": insert_id,
+        "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "severity": severity,
+        "trace": f"projects/my-prod-gcp/traces/{trace_id}",
+        "resource": {
+            "type": "k8s_container",
+            "labels": {
+                "container_name": random.choice(SERVICES),
+                "pod_name": f"app-worker-{random.getrandbits(16):04x}",
+                "namespace_name": "production"
+            }
+        }
+    }
+    if use_json_payload:
+        entry["jsonPayload"] = {
+            "message": msg,
+            "status": status,
+            "client_ip": random.choice(IPS),
+            "latency_ms": round(random.uniform(3.5, 420.0), 2)
+        }
+    else:
+        entry["textPayload"] = f"[{severity}] {msg} (status: {status})"
+
+    return json.dumps(entry)
+
+
 def gen_mixed() -> str:
     choice = random.random()
-    if choice < 0.35:
+    if choice < 0.20:
         return gen_http_access_log()
-    elif choice < 0.60:
+    elif choice < 0.35:
+        return gen_cloudwatch()
+    elif choice < 0.50:
+        return gen_gcp()
+    elif choice < 0.65:
         return gen_json()
     elif choice < 0.75:
+        return gen_logfmt()
+    elif choice < 0.85:
+        return gen_syslog_auth()
+    elif choice < 0.92:
         return gen_k8s()
-    elif choice < 0.88:
+    elif choice < 0.96:
         return gen_apache_error()
     else:
         return gen_nginx_error()
@@ -363,6 +484,10 @@ def gen_mixed() -> str:
 
 GENERATORS = {
     "mixed": gen_mixed,
+    "cloudwatch": gen_cloudwatch,
+    "aws": gen_cloudwatch,
+    "gcp": gen_gcp,
+    "stackdriver": gen_gcp,
     "nginx": gen_nginx_access,
     "nginx_access": gen_nginx_access,
     "nginx_error": gen_nginx_error,
@@ -370,6 +495,9 @@ GENERATORS = {
     "apache_error": gen_apache_error,
     "k8s": gen_k8s,
     "json": gen_json,
+    "logfmt": gen_logfmt,
+    "auth": gen_syslog_auth,
+    "syslog": gen_syslog_auth,
 }
 
 # -----------------------------------------------------------------------------

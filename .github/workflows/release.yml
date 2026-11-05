@@ -28,6 +28,8 @@ jobs:
             target: x86_64-apple-darwin
           - runner: macos-14
             target: aarch64-apple-darwin
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
     env:
       RUST_VERSION: '1.94.0'
       TARGET: ${{ matrix.target }}
@@ -64,7 +66,11 @@ jobs:
           fi
           cargo test --locked --all-targets --target "$TARGET"
           cargo build --locked --release --target "$TARGET"
-          test "$(target/"$TARGET"/release/flik --version)" = "flik ${TAG#v}"
+          EXT=""
+          if [[ "$TARGET" == *-windows-* ]]; then
+            EXT=".exe"
+          fi
+          test "$(target/"$TARGET"/release/flik$EXT --version)" = "flik ${TAG#v}"
           if [[ "$TARGET" == *-linux-musl ]]; then
             file "target/$TARGET/release/flik" | grep -E 'statically linked|static-pie linked'
           fi
@@ -72,9 +78,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          EXT=""
+          if [[ "$TARGET" == *-windows-* ]]; then
+            EXT=".exe"
+          fi
           mkdir -p artifacts package
-          cp "target/$TARGET/release/flik" LICENSE package/
-          tar -czf "artifacts/flik-$TAG-$TARGET.tar.gz" -C package flik LICENSE
+          cp "target/$TARGET/release/flik$EXT" LICENSE package/
+          tar -czf "artifacts/flik-$TAG-$TARGET.tar.gz" -C package "flik$EXT" LICENSE
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: binary-${{ matrix.target }}
@@ -104,18 +114,18 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts
-          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 4
+          test "$(find . -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 5
           sha256sum flik-*.tar.gz > SHA256SUMS
           sha256sum --check SHA256SUMS
       - name: Prepare release notes
         shell: bash
         run: |
           cat > release-notes.md <<'NOTES'
-          Prebuilt Flik binaries for Linux x86-64 / ARM64 and macOS Intel / Apple Silicon.
+          Prebuilt Flik binaries for Linux x86-64 / ARM64, macOS Intel / Apple Silicon, and Windows x86-64.
 
           Download the archive matching your platform, verify its SHA-256 against SHA256SUMS, extract it and run `flik --version`. No Rust installation is needed.
 
-          Linux builds use musl and are checked for static linking. macOS builds require macOS 11 or later and are not Developer ID signed or notarized. Windows release binaries are not provided yet.
+          Linux builds use musl and are checked for static linking. macOS builds require macOS 11 or later and are not Developer ID signed or notarized. Windows builds run locally on Windows 10/11.
 
           These checksums detect damaged or mismatched downloads; they are not independent publisher signatures. Review the source and release provenance when deciding what to trust.
           NOTES

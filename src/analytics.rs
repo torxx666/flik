@@ -9,11 +9,15 @@ use crate::reader::LogReader;
 static IPV4_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap());
 static UUID_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b").unwrap());
 static HEX_HASH_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b[0-9a-fA-F]{16,64}\b").unwrap());
+static HEX_TRACE_ID_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b[0-9a-fA-F]{32}\b").unwrap());
+static W3C_TRACEPARENT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b00-([0-9a-fA-F]{32})-([0-9a-fA-F]{16})-[0-9a-fA-F]{2}\b").unwrap());
+static SSH_AUTH_USER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:for(?: invalid user)?|user)\s+([a-zA-Z0-9_\-\.]{2,32})\s+from").unwrap());
+static SUDO_USER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"USER=([a-zA-Z0-9_\-\.]{2,32})").unwrap());
 static ISO_TIME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?").unwrap());
 static APACHE_TIME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[\d{2}/[A-Za-z]{3}/\d{4}:\d{2}:\d{2}:\d{2} [+-]\d{4}\]").unwrap());
 static NGINX_TIME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}").unwrap());
 static NUM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\b\d+(?:\.\d+)?\b").unwrap());
-static CORRELATION_KEY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)"?(trace_id|request_id|req_id|txn_id|transaction_id|account_id|acc_id|user_id|order_id|session_id|correlation_id|span_id)"?\s*[:=]\s*"?([a-zA-Z0-9_\-\.]+)"?"#).unwrap());
+static CORRELATION_KEY_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)"?(trace_id|traceid|traceparent|request_id|requestid|req_id|reqid|txn_id|transaction_id|account_id|acc_id|user_id|userid|username|user|target_user|client_ip|clientip|order_id|session_id|sessionid|correlation_id|correlationid|span_id|spanid)"?\s*[:=]\s*"?([a-zA-Z0-9_\-\.]+)"?"#).unwrap());
 
 // -----------------------------------------------------------------------------
 // 1. Stats Dashboard Aggregator
@@ -37,7 +41,12 @@ impl StatsSummary {
     pub fn compute(reader: &LogReader, max_samples: usize) -> Self {
         let total_lines = reader.line_count();
         let sample_count = total_lines.min(max_samples).max(1);
-        let lines = reader.read_range(0, sample_count);
+        let start_idx = if reader.is_actively_growing() || reader.is_tail_enabled() {
+            total_lines.saturating_sub(sample_count)
+        } else {
+            0
+        };
+        let lines = reader.read_range(start_idx, sample_count);
 
         let mut level_counts = BTreeMap::new();
         let mut status_counts: HashMap<u16, usize> = HashMap::new();
@@ -419,27 +428,77 @@ impl TraceCorrelator {
     /// Extracts correlation identifiers present in a log line
     pub fn extract_identifiers(line: &str) -> Vec<(String, String)> {
         let mut ids = Vec::new();
+        let mut seen_values = std::collections::HashSet::new();
 
-        for caps in CORRELATION_KEY_RE.captures_iter(line) {
-            if let (Some(k), Some(v)) = (caps.get(1), caps.get(2)) {
-                let key = k.as_str().to_lowercase();
-                let val = v.as_str().to_string();
-                if !val.is_empty() && val != "-" && val != "null" {
-                    ids.push((key, val));
+        // 1. W3C traceparent (00-<32hex trace_id>-<16hex span_id>-<flags>)
+        if let Some(caps) = W3C_TRACEPARENT_RE.captures(line) {
+            if let Some(trace_id) = caps.get(1) {
+                let v = trace_id.as_str().to_string();
+                if seen_values.insert(v.clone()) {
+                    ids.push(("trace_id".to_string(), v));
+                }
+            }
+            if let Some(span_id) = caps.get(2) {
+                let v = span_id.as_str().to_string();
+                if seen_values.insert(v.clone()) {
+                    ids.push(("span_id".to_string(), v));
                 }
             }
         }
 
-        // Also check if line contains a standalone UUID
-        if ids.is_empty() {
-            if let Some(m) = UUID_RE.find(line) {
-                ids.push(("uuid".into(), m.as_str().to_string()));
+        // 2. Explicit key-value pairs (JSON, logfmt or key=val)
+        for caps in CORRELATION_KEY_RE.captures_iter(line) {
+            if let (Some(k), Some(v)) = (caps.get(1), caps.get(2)) {
+                let key = k.as_str().to_lowercase();
+                let val = v.as_str().to_string();
+                if !val.is_empty() && val != "-" && val != "null" && val != "none" {
+                    if seen_values.insert(val.clone()) {
+                        ids.push((key, val));
+                    }
+                }
             }
         }
 
-        // Also check IP address
-        if let Some(m) = IPV4_RE.find(line) {
-            ids.push(("ip".into(), m.as_str().to_string()));
+        // 3. Syslog SSH & Sudo usernames
+        if let Some(caps) = SSH_AUTH_USER_RE.captures(line) {
+            if let Some(u) = caps.get(1) {
+                let val = u.as_str().to_string();
+                if seen_values.insert(val.clone()) {
+                    ids.push(("user".to_string(), val));
+                }
+            }
+        }
+        if let Some(caps) = SUDO_USER_RE.captures(line) {
+            if let Some(u) = caps.get(1) {
+                let val = u.as_str().to_string();
+                if seen_values.insert(val.clone()) {
+                    ids.push(("user".to_string(), val));
+                }
+            }
+        }
+
+        // 4. Standalone UUID
+        for m in UUID_RE.find_iter(line) {
+            let val = m.as_str().to_string();
+            if seen_values.insert(val.clone()) {
+                ids.push(("uuid".into(), val));
+            }
+        }
+
+        // 5. Standalone 32-hex trace ID (if not already captured)
+        for m in HEX_TRACE_ID_RE.find_iter(line) {
+            let val = m.as_str().to_string();
+            if seen_values.insert(val.clone()) {
+                ids.push(("trace_id".into(), val));
+            }
+        }
+
+        // 6. IP address
+        for m in IPV4_RE.find_iter(line) {
+            let val = m.as_str().to_string();
+            if seen_values.insert(val.clone()) {
+                ids.push(("ip".into(), val));
+            }
         }
 
         ids

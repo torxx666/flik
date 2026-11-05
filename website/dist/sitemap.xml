@@ -1,2 +1,2 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://flik.spedo.dev/</loc></url></urlset>
+<?xml version='1.0' encoding='utf-8'?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://flik.spedo.dev/</loc><lastmod>2026-10-27</lastmod></url><url><loc>https://flik.spedo.dev/guides/</loc><lastmod>2026-10-27</lastmod></url><url><loc>https://flik.spedo.dev/guides/kubernetes-json-logs.html</loc><lastmod>2026-10-27</lastmod></url><url><loc>https://flik.spedo.dev/guides/error-context.html</loc><lastmod>2026-10-27</lastmod></url><url><loc>https://flik.spedo.dev/guides/nginx-errors-per-hour.html</loc><lastmod>2026-10-27</lastmod></url><url><loc>https://flik.spedo.dev/guides/flik-grep-jq.html</loc><lastmod>2026-10-27</lastmod></url></urlset>

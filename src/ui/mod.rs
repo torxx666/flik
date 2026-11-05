@@ -72,6 +72,10 @@ pub struct UiState {
     pub bookmarks: std::collections::BTreeSet<usize>,
     pub diff_pinned_line: Option<usize>,
     pub tail_following: bool,
+    pub live_stream_errors: usize,
+    pub alert_threshold: usize,
+    pub alert_toast_shown: bool,
+    pub last_stats_refresh: Option<std::time::Instant>,
 }
 
 impl UiState {
@@ -91,6 +95,10 @@ impl UiState {
             bookmarks: std::collections::BTreeSet::new(),
             diff_pinned_line: None,
             tail_following: false,
+            live_stream_errors: 0,
+            alert_threshold: 5,
+            alert_toast_shown: false,
+            last_stats_refresh: None,
         }
     }
 }
@@ -562,7 +570,92 @@ impl FlikUi {
                                 };
                                 segments.push((format!("[{}] ", lvl), lvl_style));
                             }
+                            if let Some(action) = record.get_field_value("action") {
+                                let act_color = if action.contains("failed") || action.contains("invalid") || action.contains("failure") {
+                                    Color::Rgb(255, 90, 90)
+                                } else {
+                                    Color::Rgb(100, 255, 150)
+                                };
+                                segments.push((format!("<{}> ", action), Style::default().fg(act_color)));
+                            }
+                            if let Some(user) = record.get_field_value("user") {
+                                if !user.is_empty() {
+                                    segments.push((format!("user:{} ", user), Style::default().fg(Color::Rgb(255, 200, 80))));
+                                }
+                            }
+                            if let Some(ip) = record.get_field_value("ip") {
+                                if !ip.is_empty() {
+                                    segments.push((format!("ip:{} ", ip), Style::default().fg(Color::Rgb(100, 220, 255))));
+                                }
+                            }
                             if has_field("message") {
+                                segments.push((record.message.clone(), Style::default().fg(theme.fg)));
+                            }
+                        }
+                        LogFormat::Logfmt => {
+                            if let Some(ref ts) = record.timestamp {
+                                segments.push((format!("{} ", ts), theme.timestamp));
+                            }
+                            if let Some(ref lvl) = record.level {
+                                let lvl_style = match lvl.as_str() {
+                                    "ERROR" | "FATAL" | "CRIT" => theme.level_error,
+                                    "WARN" | "WARNING" => theme.level_warn,
+                                    _ => theme.level_info,
+                                };
+                                segments.push((format!("[{}] ", lvl), lvl_style));
+                            }
+                            if let Some(status) = record.status {
+                                let status_style = match status {
+                                    500..=599 => theme.status_5xx,
+                                    400..=499 => theme.status_4xx,
+                                    300..=399 => theme.status_3xx,
+                                    _ => theme.status_2xx,
+                                };
+                                segments.push((format!("{} ", status), status_style));
+                            }
+                            for field in &record.fields {
+                                let k_lower = field.key.to_lowercase();
+                                if k_lower == "time" || k_lower == "timestamp" || k_lower == "level" || k_lower == "status" {
+                                    continue;
+                                }
+                                segments.push((format!("{}=", field.key), Style::default().fg(Color::Rgb(100, 210, 255))));
+                                if field.value.contains(' ') {
+                                    segments.push((format!("\"{}\" ", field.value), Style::default().fg(Color::Rgb(180, 230, 140))));
+                                } else {
+                                    segments.push((format!("{} ", field.value), Style::default().fg(Color::Rgb(220, 220, 220))));
+                                }
+                            }
+                        }
+                        LogFormat::Custom => {
+                            if let Some(ref ts) = record.timestamp {
+                                segments.push((format!("{} ", ts), theme.timestamp));
+                            }
+                            if let Some(ref lvl) = record.level {
+                                let lvl_style = match lvl.as_str() {
+                                    "ERROR" | "FATAL" | "CRIT" => theme.level_error,
+                                    "WARN" | "WARNING" => theme.level_warn,
+                                    _ => theme.level_info,
+                                };
+                                segments.push((format!("[{}] ", lvl), lvl_style));
+                            }
+                            if let Some(status) = record.status {
+                                let status_style = match status {
+                                    500..=599 => theme.status_5xx,
+                                    400..=499 => theme.status_4xx,
+                                    300..=399 => theme.status_3xx,
+                                    _ => theme.status_2xx,
+                                };
+                                segments.push((format!("{} ", status), status_style));
+                            }
+                            for field in &record.fields {
+                                let k_lower = field.key.to_lowercase();
+                                if k_lower == "time" || k_lower == "timestamp" || k_lower == "level" || k_lower == "status" || k_lower == "message" {
+                                    continue;
+                                }
+                                segments.push((format!("{}:", field.key), Style::default().fg(Color::Rgb(100, 210, 255))));
+                                segments.push((format!("{} ", field.value), Style::default().fg(Color::Rgb(220, 220, 220))));
+                            }
+                            if !record.message.is_empty() {
                                 segments.push((record.message.clone(), Style::default().fg(theme.fg)));
                             }
                         }
@@ -1318,8 +1411,35 @@ impl FlikUi {
 
         buf.set_string(area.left(), area.top(), &status_left, status_style);
 
+        let (alert_str, alert_style) = if ui_state.live_stream_errors >= ui_state.alert_threshold {
+            let now_m = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            let blink = (now_m / 400) % 2 == 0;
+            let bg = if blink { Color::Rgb(200, 30, 30) } else { Color::Rgb(220, 80, 0) };
+            (
+                format!(" ⚠️ ALERT: {} stream errors [S] ", ui_state.live_stream_errors),
+                Style::default().bg(bg).fg(Color::White).add_modifier(Modifier::BOLD),
+            )
+        } else if ui_state.live_stream_errors > 0 {
+            (
+                format!(" ⚠️ {} stream err [S] ", ui_state.live_stream_errors),
+                Style::default().bg(Color::Rgb(140, 70, 0)).fg(Color::Rgb(255, 230, 100)).add_modifier(Modifier::BOLD),
+            )
+        } else {
+            (String::new(), Style::default())
+        };
+
         let status_right = format!("{}[Esc]: Menu ", tail_status);
         let right_x = area.right().saturating_sub(status_right.len() as u16);
+        let alert_len = alert_str.len() as u16;
+        let alert_x = right_x.saturating_sub(alert_len);
+
+        if !alert_str.is_empty() && alert_x > area.left() + status_left.len() as u16 {
+            buf.set_string(alert_x, area.top(), &alert_str, alert_style);
+        }
+
         if right_x > area.left() {
             buf.set_string(
                 right_x,

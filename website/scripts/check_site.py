@@ -3,6 +3,7 @@
 from html.parser import HTMLParser
 from pathlib import Path
 import json, re, subprocess
+from urllib.parse import urlsplit, unquote
 root = Path(__file__).resolve().parents[1] / 'dist'
 class Page(HTMLParser):
     def __init__(self): super().__init__(); self.links = []; self.ids = set(); self.copy_targets = []
@@ -29,7 +30,22 @@ for link in page.links:
     if link.startswith('#'):
         assert link == '#' or link[1:] in page.ids, f'Missing anchor: {link}'
     elif not re.match(r'https?://', link):
-        assert (root / link).is_file(), f'Missing asset: {link}'
+        target=root/link
+        if target.is_dir():target=target/'index.html'
+        assert target.is_file(), f'Missing asset: {link}'
+# Guides need complete HTML content and working relative/root links without JavaScript.
+for path in root.rglob('*.html'):
+    parsed=Page();parsed.feed(path.read_text())
+    assert path.read_text().count('<h1')==1, f'Expected one main heading: {path}'
+    for link in parsed.links:
+        url=urlsplit(link)
+        if url.scheme or url.netloc:continue
+        target=(root/url.path.lstrip('/')) if url.path.startswith('/') else path.parent/unquote(url.path)
+        if not url.path:target=path
+        if target.is_dir():target=target/'index.html'
+        assert target.is_file(),f'Missing local link in {path}: {link}'
+        if url.fragment and target.suffix=='.html':
+            other=Page();other.feed(target.read_text());assert url.fragment in other.ids,f'Missing anchor: {link}'
 for demo in ('kubernetes-json', 'smart-find', 'apache-levels', 'hourly-frequency'):
     for suffix in ('.mp4', '.png', '.vtt', '.en.vtt'):
         assert (root / 'assets' / 'demos' / (demo + suffix)).is_file()

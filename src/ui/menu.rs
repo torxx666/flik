@@ -39,6 +39,7 @@ pub enum MenuAction {
     SelectFieldRange,
     InspectFieldValues,
     ForceJson,
+    ForceLogfmt,
     ForceApache,
     ForceApacheError,
     ForceNginxError,
@@ -310,6 +311,12 @@ impl MenuBar {
                         "",
                         MenuAction::ForceJson,
                         "Parse lines as JSON objects with key extraction",
+                    ),
+                    MenuItem::item(
+                        "Force Logfmt Format",
+                        "",
+                        MenuAction::ForceLogfmt,
+                        "Parse lines as logfmt key=value structured records",
                     ),
                     MenuItem::item(
                         "Force Apache / Nginx Combined",
@@ -763,6 +770,13 @@ impl MenuBar {
                     "[●] Force JSON Format".to_string()
                 } else {
                     "[ ] Force JSON Format".to_string()
+                }
+            }
+            MenuAction::ForceLogfmt => {
+                if matches!(format_mgr.detected_format, crate::format::LogFormat::Logfmt) {
+                    "[●] Force Logfmt (key=val)".to_string()
+                } else {
+                    "[ ] Force Logfmt (key=val)".to_string()
                 }
             }
             MenuAction::ForceApache => {

@@ -33,6 +33,7 @@ pub struct App {
     pub last_q_press: Option<Instant>,
     pub mouse_capture_enabled: bool,
     pub last_click: Option<(Instant, u16, u16)>,
+    pub last_alert_scanned_line: usize,
 }
 
 fn copy_text_to_clipboard(text: &str) {
@@ -257,6 +258,7 @@ impl App {
             last_q_press: None,
             mouse_capture_enabled: true,
             last_click: None,
+            last_alert_scanned_line: 0,
         })
     }
 
@@ -337,7 +339,34 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn tick(&mut self, height: u16) {
+fn is_error_log_line(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    // HTTP 5xx
+    if lower.contains(" 500 ")
+        || lower.contains(" 502 ")
+        || lower.contains(" 503 ")
+        || lower.contains(" 504 ")
+        || lower.contains("\"status\":5")
+        || lower.contains("status=5")
+        || lower.contains("status:5")
+    {
+        return true;
+    }
+    // Severity levels & security alerts
+    if lower.contains("error")
+        || lower.contains("fatal")
+        || lower.contains("critical")
+        || lower.contains("panic")
+        || lower.contains("failed password")
+        || lower.contains("authentication failure")
+        || lower.contains("sudo_failed")
+    {
+        return true;
+    }
+    false
+}
+
+    pub fn tick(&mut self, height: u16) {
         // Check if quit warning has expired (after 1.5s)
         if let Some(t) = self.last_q_press {
             if t.elapsed() > Duration::from_millis(1500) {
@@ -355,6 +384,50 @@ impl App {
 
         // Process incoming lines for active filters in real-time
         self.filter.process_incoming_lines(&self.reader);
+
+        // Live stream error detection & alerting
+        if self.reader.is_actively_growing() || self.reader.is_tail_enabled() {
+            let total = self.reader.line_count();
+            if total > self.last_alert_scanned_line {
+                let to_scan = (total - self.last_alert_scanned_line).min(300);
+                let start = total - to_scan;
+                let new_lines = self.reader.read_range(start, to_scan);
+                self.last_alert_scanned_line = total;
+
+                let mut new_errors = 0;
+                for (_, line) in &new_lines {
+                    if Self::is_error_log_line(line) {
+                        new_errors += 1;
+                    }
+                }
+
+                if new_errors > 0 {
+                    self.ui_state.live_stream_errors += new_errors;
+                    if self.ui_state.live_stream_errors >= self.ui_state.alert_threshold && !self.ui_state.alert_toast_shown {
+                        self.ui_state.alert_toast_shown = true;
+                        self.ui_state.status_toast = Some((
+                            format!("⚠️ STREAM ALERT: {} errors in live stream! [Press S for Stats]", self.ui_state.live_stream_errors),
+                            Instant::now(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Live stats auto-refresh while StatsDashboard modal is open
+        if let ActiveModal::StatsDashboard { ref mut stats, .. } = self.modal {
+            if self.reader.is_actively_growing() || self.reader.is_tail_enabled() {
+                let now = Instant::now();
+                let should_refresh = match self.ui_state.last_stats_refresh {
+                    Some(last) => now.duration_since(last) >= Duration::from_millis(1000),
+                    None => true,
+                };
+                if should_refresh {
+                    *stats = crate::analytics::StatsSummary::compute(&self.reader, 5000);
+                    self.ui_state.last_stats_refresh = Some(now);
+                }
+            }
+        }
 
         // Auto-follow if tail mode is active
         if self.reader.is_tail_enabled() {
@@ -1359,6 +1432,14 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('q') => {
                     self.modal = ActiveModal::None;
                 }
+                KeyCode::Char('r') | KeyCode::F(5) => {
+                    *stats = crate::analytics::StatsSummary::compute(&self.reader, 5000);
+                    self.ui_state.last_stats_refresh = Some(Instant::now());
+                    self.ui_state.status_toast = Some((
+                        "Stats refreshed from latest logs".to_string(),
+                        Instant::now(),
+                    ));
+                }
                 KeyCode::Tab | KeyCode::Right => {
                     *selected_tab = (*selected_tab + 1) % 5;
                     *selected_item = 0;
@@ -1598,6 +1679,42 @@ impl App {
                         self.reset_view_after_filter_change();
                         self.ui_state.status_toast = Some((
                             format!("Correlated view for {}: '{}' (x to clear)", key_name, val),
+                            Instant::now(),
+                        ));
+                    }
+                    self.modal = ActiveModal::None;
+                }
+                KeyCode::Char('e') | KeyCode::Char('!') => {
+                    let target_pair = identifiers.get(*selected_index).cloned();
+                    if let Some((key_name, val)) = target_pair {
+                        let _ = self.filter.add_rule(
+                            val.clone(),
+                            FilterKind::Exclude,
+                            false,
+                            false,
+                            &self.reader,
+                        );
+                        self.reset_view_after_filter_change();
+                        self.ui_state.status_toast = Some((
+                            format!("Excluded {}: '{}' (x to clear)", key_name, val),
+                            Instant::now(),
+                        ));
+                    }
+                    self.modal = ActiveModal::None;
+                }
+                KeyCode::Char('t') => {
+                    let target_pair = identifiers.get(*selected_index).cloned();
+                    if let Some((key_name, val)) = target_pair {
+                        let _ = self.filter.add_rule(
+                            format!(r"(?:^|[^A-Za-z0-9_.-]){}(?:$|[^A-Za-z0-9_.-])", regex::escape(&val)),
+                            FilterKind::Include,
+                            true,
+                            true,
+                            &self.reader,
+                        );
+                        self.reset_view_after_filter_change();
+                        self.ui_state.status_toast = Some((
+                            format!("Traced boundary for {}: '{}'", key_name, val),
                             Instant::now(),
                         ));
                     }
@@ -1914,6 +2031,24 @@ impl App {
                 );
                 self.reset_view_after_filter_change();
                 self.ui_state.status_toast = Some(("Forced format: JSON".into(), Instant::now()));
+            }
+            MenuAction::ForceLogfmt => {
+                self.format.selected_format = LogFormat::Logfmt;
+                let sample_lines: Vec<String> = self
+                    .reader
+                    .read_range(0, 100)
+                    .into_iter()
+                    .map(|(_, l)| l)
+                    .collect();
+                self.format.detect_and_index_fields(&sample_lines);
+                self.filter.sync_field_filter(
+                    &self.format.visible_fields,
+                    &self.format.available_fields,
+                    false,
+                    &self.reader,
+                );
+                self.reset_view_after_filter_change();
+                self.ui_state.status_toast = Some(("Forced format: Logfmt".into(), Instant::now()));
             }
             MenuAction::ForceApache => {
                 self.format.selected_format = LogFormat::ApacheCombined;

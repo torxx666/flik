@@ -7,6 +7,7 @@ __pycache__/
 .env.*
 /live_stream.log
 /REVUE_PRO.md
+/remarks_externes.md
 /artifacts/
 /website/.git
 /website/.openai/

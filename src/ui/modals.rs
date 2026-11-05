@@ -1411,7 +1411,9 @@ impl ModalRenderer {
             Span::raw("  │  "),
             Span::styled("[↑/↓] Select Item", Style::default().fg(Color::Yellow)),
             Span::raw("  │  "),
-            Span::styled("[Enter] Filter by Selected", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("[Enter] Filter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw("  │  "),
+            Span::styled("[r / F5] Refresh", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
             Span::raw("  │  "),
             Span::styled("[Esc] Close", Style::default().fg(Color::Gray)),
         ]);
@@ -1812,7 +1814,11 @@ impl ModalRenderer {
         }
 
         let footer = Line::from(vec![
-            Span::styled("[Enter] Filter all lines by this ID", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled("[Enter] Include", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw("  │  "),
+            Span::styled("[e] Exclude", Style::default().fg(Color::Red)),
+            Span::raw("  │  "),
+            Span::styled("[t] Trace Boundary", Style::default().fg(Color::Magenta)),
             Span::raw("  │  "),
             Span::styled("[↑/↓] Select", Style::default().fg(Color::Cyan)),
             Span::raw("  │  "),
