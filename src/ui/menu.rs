@@ -67,6 +67,7 @@ pub enum MenuAction {
     JumpNextBookmark,
     DiffLines,
     CorrelateTrace,
+    InspectJson,
 
     // Export
     ExportFiltered,
@@ -407,7 +408,13 @@ impl MenuBar {
                         "Toggle JSON Auto-Indent",
                         "w",
                         MenuAction::ToggleAutoIndentJson,
-                        "Format and indent embedded JSON payload strings",
+                        "Format and indent embedded JSON payload strings in stream",
+                    ),
+                    MenuItem::item(
+                        "Beautify / Inspect JSON (jq)",
+                        "J",
+                        MenuAction::InspectJson,
+                        "Open full beautified and formatted JSON inspector for selected line",
                     ),
                     MenuItem::sep(),
                     MenuItem::item(

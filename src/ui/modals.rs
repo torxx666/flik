@@ -121,11 +121,28 @@ impl ModalRenderer {
                 let inner = block.inner(popup);
                 block.render(popup, buf);
                 let content = Rect { height: inner.height.saturating_sub(1), ..inner };
-                Paragraph::new(lines.iter().skip(*scroll).take(content.height as usize)
-                    .map(|s| Line::raw(s.clone())).collect::<Vec<_>>())
-                    .scroll((0, (*horizontal).min(u16::MAX as usize) as u16)).render(content, buf);
+                let is_json = title.contains("JSON");
+                if is_json {
+                    for (row_idx, line_str) in lines.iter().skip(*scroll).take(content.height as usize).enumerate() {
+                        let y = content.top() + row_idx as u16;
+                        crate::ui::FlikUi::render_colorized_json(
+                            buf,
+                            content.left(),
+                            y,
+                            content.right(),
+                            line_str,
+                            *horizontal,
+                            Style::default().bg(theme.modal_bg),
+                            theme,
+                        );
+                    }
+                } else {
+                    Paragraph::new(lines.iter().skip(*scroll).take(content.height as usize)
+                        .map(|s| Line::raw(s.clone())).collect::<Vec<_>>())
+                        .scroll((0, (*horizontal).min(u16::MAX as usize) as u16)).render(content, buf);
+                }
                 if inner.height > 0 {
-                    Paragraph::new(format!("↑↓ / PgUp PgDn: scroll | ←→: pan | Esc: close | {}/{} lines", scroll + 1, lines.len()))
+                    Paragraph::new(format!("↑↓ / j,k / PgUp PgDn: scroll | ←→: pan | Esc/q: close | {}/{} lines", scroll + 1, lines.len()))
                         .style(Style::default().fg(Color::Yellow))
                         .render(Rect { y: inner.bottom() - 1, height: 1, ..inner }, buf);
                 }

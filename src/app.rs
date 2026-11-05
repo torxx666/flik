@@ -802,6 +802,9 @@ fn is_error_log_line(line: &str) -> bool {
             KeyCode::Char('C') => {
                 self.execute_menu_action(MenuAction::CorrelateTrace);
             }
+            KeyCode::Char('J') => {
+                self.execute_menu_action(MenuAction::InspectJson);
+            }
             _ => {}
         }
     }
@@ -2373,6 +2376,73 @@ fn is_error_log_line(line: &str) -> bool {
                         }
                     }
                 }
+            }
+            MenuAction::InspectJson => {
+                self.inspect_current_line_json();
+            }
+        }
+    }
+
+    fn inspect_current_line_json(&mut self) {
+        let total = self.filter.filtered_count(&self.reader);
+        if total == 0 {
+            return;
+        }
+        let actual_idx = match self.original_line_index_for_view(self.ui_state.selected_line) {
+            Some(idx) => idx,
+            None => return,
+        };
+        let line = self.reader.read_line(actual_idx).unwrap_or_default();
+        let trimmed = line.trim();
+
+        let parsed_opt = serde_json::from_str::<serde_json::Value>(trimmed)
+            .ok()
+            .or_else(|| {
+                let record = self.format.parse_line(&line);
+                serde_json::from_str::<serde_json::Value>(record.message.trim()).ok()
+            })
+            .or_else(|| {
+                if let Some(s) = trimmed.find('{') {
+                    if let Some(e) = trimmed.rfind('}') {
+                        if e > s {
+                            serde_json::from_str::<serde_json::Value>(&trimmed[s..=e]).ok()
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+
+        match parsed_opt {
+            Some(json_val) => {
+                if let Ok(pretty) = serde_json::to_string_pretty(&json_val) {
+                    let lines: Vec<String> = pretty.lines().map(|s| s.to_string()).collect();
+                    let count = lines.len();
+                    self.modal = ActiveModal::Report {
+                        title: format!(
+                            "JSON Inspector (Beautified) - Line #{} ({} lines)",
+                            actual_idx + 1,
+                            count
+                        ),
+                        lines,
+                        scroll: 0,
+                        horizontal: 0,
+                    };
+                    self.ui_state.status_toast = Some((
+                        format!("JSON Beautified: {} lines [↑↓: scroll, ←→: pan, Esc/q: close]", count),
+                        Instant::now(),
+                    ));
+                }
+            }
+            None => {
+                self.ui_state.status_toast = Some((
+                    "Selected line does not contain valid JSON to beautify".to_string(),
+                    Instant::now(),
+                ));
             }
         }
     }

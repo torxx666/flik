@@ -228,3 +228,62 @@ fn test_cloudwatch_and_stackdriver_json_parsing() {
     assert!(auto_fmt.available_fields.contains(&"active_connections".to_string()));
 }
 
+#[test]
+fn test_json_beautify_modal_and_horizontal_scroll_colors() {
+    use flik::ui::FlikUi;
+    use flik::ui::theme::Theme;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    use ratatui::style::Style;
+
+    let theme = Theme::default();
+    let area = Rect::new(0, 0, 100, 1);
+    let mut buf = Buffer::empty(area);
+
+    let gcp_line = r#"{"insertId": "gcp-12345", "severity": "ERROR", "status": 502}"#;
+
+    // Test 1: render at scroll_col = 0
+    FlikUi::render_colorized_json(
+        &mut buf,
+        0,
+        0,
+        100,
+        gcp_line,
+        0,
+        Style::default(),
+        &theme,
+    );
+
+    // Character at index 1 is 'i' in "insertId" -> must be theme.json_key
+    assert_eq!(buf.cell((1, 0)).unwrap().style().fg, theme.json_key.fg);
+
+    // Test 2: render at scroll_col = 5 (cutting off `{"ins`, starting at `ertId"`)
+    let mut buf_scrolled = Buffer::empty(area);
+    FlikUi::render_colorized_json(
+        &mut buf_scrolled,
+        0,
+        0,
+        100,
+        gcp_line,
+        5,
+        Style::default(),
+        &theme,
+    );
+
+    // Character at position 0 in scrolled buffer is 'e' in "ertId"
+    assert_eq!(buf_scrolled.cell((0, 0)).unwrap().symbol(), "e");
+    // CRITICAL: It MUST still have theme.json_key color, NOT be corrupted into alphabetic or inverted quote!
+    assert_eq!(buf_scrolled.cell((0, 0)).unwrap().style().fg, theme.json_key.fg);
+
+    // Find colon ':' in scrolled buffer: at col 6 (index 11 - 5)
+    let colon_cell = buf_scrolled.cell((6, 0)).unwrap();
+    assert_eq!(colon_cell.symbol(), ":");
+    assert_eq!(colon_cell.style().fg, theme.json_colon.fg);
+
+    // Character at col 9 is 'g' in "gcp-12345" -> must have theme.json_string color!
+    let str_cell = buf_scrolled.cell((9, 0)).unwrap();
+    assert_eq!(str_cell.symbol(), "g");
+    assert_eq!(str_cell.style().fg, theme.json_string.fg);
+}
+
+

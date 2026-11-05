@@ -381,13 +381,18 @@ impl FlikUi {
             let fmt = format_mgr.active_format();
             let record = format_mgr.parse_line(raw_line);
             let has_field = |f: &str| format_mgr.visible_fields.iter().any(|v| v.eq_ignore_ascii_case(f));
-            let pretty_json = if fmt == LogFormat::Kubernetes
-                && ui_state.auto_indent_json
-                && has_field("message")
-            {
-                serde_json::from_str::<serde_json::Value>(&record.message)
-                    .ok()
-                    .and_then(|value| serde_json::to_string_pretty(&value).ok())
+            let pretty_json = if ui_state.auto_indent_json {
+                if fmt == LogFormat::Kubernetes && has_field("message") {
+                    serde_json::from_str::<serde_json::Value>(&record.message)
+                        .ok()
+                        .and_then(|value| serde_json::to_string_pretty(&value).ok())
+                } else if fmt == LogFormat::Json || raw_line.trim().starts_with('{') {
+                    serde_json::from_str::<serde_json::Value>(raw_line.trim())
+                        .ok()
+                        .and_then(|value| serde_json::to_string_pretty(&value).ok())
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -396,6 +401,8 @@ impl FlikUi {
                 if remaining_width > 0 {
                     let text = if pretty_json.is_some() && fmt == LogFormat::Kubernetes {
                         &raw_line[..raw_line.len().saturating_sub(record.message.len())]
+                    } else if pretty_json.is_some() && (fmt == LogFormat::Json || raw_line.trim().starts_with('{')) {
+                        record.timestamp.as_deref().unwrap_or("[JSON Entry]")
                     } else {
                         raw_line
                     };
@@ -404,35 +411,57 @@ impl FlikUi {
                 }
             } else {
                 if fmt == LogFormat::Json || raw_line.trim().starts_with('{') {
-                    let is_custom_fields = format_mgr.visible_fields.len() < format_mgr.available_fields.len()
-                        && !format_mgr.visible_fields.is_empty();
+                    if pretty_json.is_some() {
+                        let summary = if let Some(ref sev) = record.level {
+                            format!("[{}] {}", sev.to_uppercase(), record.timestamp.as_deref().unwrap_or(""))
+                        } else if let Some(ref ts) = record.timestamp {
+                            format!("[JSON] {}", ts)
+                        } else {
+                            "[JSON Entry]".to_string()
+                        };
+                        let scrolled = skip_columns(&summary, ui_state.scroll_col);
+                        let remaining_width = area.right().saturating_sub(x_pos) as usize;
+                        let to_draw = truncate_to_width(scrolled, remaining_width);
+                        let summary_style = match record.level.as_deref() {
+                            Some(s) if s.eq_ignore_ascii_case("error") || s.eq_ignore_ascii_case("critical") => {
+                                Style::default().fg(Color::LightRed).add_modifier(Modifier::BOLD)
+                            }
+                            Some(s) if s.eq_ignore_ascii_case("warn") || s.eq_ignore_ascii_case("warning") => {
+                                Style::default().fg(Color::Yellow)
+                            }
+                            _ => Style::default().fg(Color::Cyan),
+                        };
+                        buf.set_string(x_pos, y, to_draw, summary_style.patch(line_bg));
+                    } else {
+                        let is_custom_fields = format_mgr.visible_fields.len() < format_mgr.available_fields.len()
+                            && !format_mgr.visible_fields.is_empty();
 
-                    let text_opt = if is_custom_fields {
-                        let mut parts = Vec::new();
-                        for vf in &format_mgr.visible_fields {
-                            if let Some(val) = record.get_field_value(vf) {
-                                let trimmed_val = val.trim();
-                                if !trimmed_val.is_empty() {
-                                    if trimmed_val.starts_with('{') || trimmed_val.starts_with('[') || trimmed_val.parse::<f64>().is_ok() || trimmed_val == "true" || trimmed_val == "false" || trimmed_val == "null" {
-                                        parts.push(format!("\"{}\": {}", vf, trimmed_val));
-                                    } else {
-                                        parts.push(format!("\"{}\": \"{}\"", vf, trimmed_val));
+                        let text_opt = if is_custom_fields {
+                            let mut parts = Vec::new();
+                            for vf in &format_mgr.visible_fields {
+                                if let Some(val) = record.get_field_value(vf) {
+                                    let trimmed_val = val.trim();
+                                    if !trimmed_val.is_empty() {
+                                        if trimmed_val.starts_with('{') || trimmed_val.starts_with('[') || trimmed_val.parse::<f64>().is_ok() || trimmed_val == "true" || trimmed_val == "false" || trimmed_val == "null" {
+                                            parts.push(format!("\"{}\": {}", vf, trimmed_val));
+                                        } else {
+                                            parts.push(format!("\"{}\": \"{}\"", vf, trimmed_val));
+                                        }
                                     }
                                 }
                             }
-                        }
-                        if parts.is_empty() {
-                            None
+                            if parts.is_empty() {
+                                None
+                            } else {
+                                Some(format!("{{ {} }}", parts.join(", ")))
+                            }
                         } else {
-                            Some(format!("{{ {} }}", parts.join(", ")))
-                        }
-                    } else {
-                        Some(raw_line.trim().to_string())
-                    };
+                            Some(raw_line.trim().to_string())
+                        };
 
-                    if let Some(text) = text_opt {
-                        let scrolled = skip_columns(&text, ui_state.scroll_col);
-                        Self::render_colorized_json(buf, x_pos, y, area.right(), scrolled, line_bg, theme);
+                        if let Some(text) = text_opt {
+                            Self::render_colorized_json(buf, x_pos, y, area.right(), &text, ui_state.scroll_col, line_bg, theme);
+                        }
                     }
                 } else {
                     // Structured non-JSON format: build styled segments
@@ -825,7 +854,8 @@ impl FlikUi {
                                     current_x,
                                     y,
                                     area.right(),
-                                    to_draw,
+                                    &seg_text,
+                                    skip_in_seg,
                                     line_bg,
                                     theme,
                                 );
@@ -937,15 +967,17 @@ impl FlikUi {
                             json_y,
                             area.right(),
                             json_line,
+                            ui_state.scroll_col,
                             Style::default().bg(theme.bg),
                             theme,
                         );
                     } else {
                         let remaining = area.right().saturating_sub(json_x) as usize;
+                        let scrolled = skip_columns(json_line, ui_state.scroll_col);
                         buf.set_string(
                             json_x,
                             json_y,
-                            truncate_to_width(json_line, remaining),
+                            truncate_to_width(scrolled, remaining),
                             Style::default().fg(theme.fg),
                         );
                     }
@@ -955,24 +987,54 @@ impl FlikUi {
         }
     }
 
-    /// Colorizes JSON keys, values, numbers, and syntax punctuation
+    /// Colorizes JSON keys, values, numbers, and syntax punctuation.
+    /// Accurately tokenizes from character 0, and offsets rendering by `scroll_col`
+    /// without knocking parser phase or mixing syntax colors across column boundaries.
     pub fn render_colorized_json(
         buf: &mut Buffer,
-        mut x: u16,
+        x: u16,
         y: u16,
         max_x: u16,
         text: &str,
+        scroll_col: usize,
         line_bg: Style,
         theme: &Theme,
     ) {
+        let max_width = (max_x.saturating_sub(x)) as usize;
+        if max_width == 0 {
+            return;
+        }
+
         let chars: Vec<char> = text.chars().collect();
         let mut i = 0;
         let n = chars.len();
+        let mut current_col: usize = 0;
 
-        while i < n && x < max_x {
+        let render_token = |buf: &mut Buffer, token_text: &str, token_style: Style, col_pos: &mut usize| {
+            let token_width = UnicodeWidthStr::width(token_text);
+            let token_end = *col_pos + token_width;
+
+            if token_end > scroll_col && *col_pos < scroll_col + max_width {
+                let skip_in_token = scroll_col.saturating_sub(*col_pos);
+                let avail = (scroll_col + max_width).saturating_sub(*col_pos + skip_in_token);
+                let visible_str = slice_by_columns(token_text, skip_in_token, avail);
+                if !visible_str.is_empty() {
+                    let screen_x = x.saturating_add((*col_pos + skip_in_token).saturating_sub(scroll_col) as u16);
+                    if screen_x < max_x {
+                        buf.set_string(screen_x, y, visible_str, token_style.patch(line_bg));
+                    }
+                }
+            }
+            *col_pos = token_end;
+        };
+
+        while i < n {
+            if current_col >= scroll_col + max_width {
+                break;
+            }
+
             match chars[i] {
                 '"' => {
-                    // String literal: determine if it's a JSON key (followed by :)
                     let start = i;
                     i += 1;
                     while i < n && chars[i] != '"' {
@@ -987,7 +1049,6 @@ impl FlikUi {
                     }
                     let token: String = chars[start..i].iter().collect();
 
-                    // Look ahead for colon (indicating KEY)
                     let mut is_key = false;
                     let mut lookahead = i;
                     while lookahead < n && chars[lookahead].is_whitespace() {
@@ -1003,30 +1064,30 @@ impl FlikUi {
                         theme.json_string
                     };
 
-                    let to_draw = truncate_to_width(&token, (max_x.saturating_sub(x)) as usize);
-                    buf.set_string(x, y, to_draw, style.patch(line_bg));
-                    x += UnicodeWidthStr::width(to_draw) as u16;
+                    render_token(buf, &token, style, &mut current_col);
                 }
                 '{' | '}' | '[' | ']' | ',' => {
-                    buf.set_string(x, y, &chars[i].to_string(), theme.json_punctuation.patch(line_bg));
-                    x += 1;
+                    let ch = chars[i];
+                    render_token(buf, &ch.to_string(), theme.json_punctuation, &mut current_col);
                     i += 1;
                 }
                 ':' => {
-                    buf.set_string(x, y, ":", theme.json_colon.patch(line_bg));
-                    x += 1;
+                    render_token(buf, ":", theme.json_colon, &mut current_col);
                     i += 1;
                 }
                 c if c.is_ascii_digit() || c == '-' => {
                     let start = i;
-                    while i < n && (chars[i].is_ascii_digit() || chars[i] == '.' || chars[i] == 'e' || chars[i] == 'E' || chars[i] == '-') {
+                    while i < n
+                        && (chars[i].is_ascii_digit()
+                            || chars[i] == '.'
+                            || chars[i] == 'e'
+                            || chars[i] == 'E'
+                            || chars[i] == '-')
+                    {
                         i += 1;
                     }
                     let token: String = chars[start..i].iter().collect();
-                    let style = theme.json_number;
-                    let to_draw = truncate_to_width(&token, (max_x.saturating_sub(x)) as usize);
-                    buf.set_string(x, y, to_draw, style.patch(line_bg));
-                    x += UnicodeWidthStr::width(to_draw) as u16;
+                    render_token(buf, &token, theme.json_number, &mut current_col);
                 }
                 c if c.is_ascii_alphabetic() => {
                     let start = i;
@@ -1038,17 +1099,10 @@ impl FlikUi {
                         "true" | "false" | "null" => theme.json_literal,
                         _ => Style::default().fg(theme.fg),
                     };
-                    let to_draw = truncate_to_width(&token, (max_x.saturating_sub(x)) as usize);
-                    buf.set_string(x, y, to_draw, style.patch(line_bg));
-                    x += UnicodeWidthStr::width(to_draw) as u16;
+                    render_token(buf, &token, style, &mut current_col);
                 }
                 c => {
-                    let ch_str = c.to_string();
-                    let ch_w = UnicodeWidthChar::width(c).unwrap_or(1);
-                    if x + (ch_w as u16) <= max_x {
-                        buf.set_string(x, y, &ch_str, Style::default().fg(theme.fg).patch(line_bg));
-                        x += ch_w as u16;
-                    }
+                    render_token(buf, &c.to_string(), Style::default().fg(theme.fg), &mut current_col);
                     i += 1;
                 }
             }
