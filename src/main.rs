@@ -101,15 +101,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
 
-        let tty = match std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open("/dev/tty")
-        {
+        let tty_path = unsafe {
+            let p1 = libc::ttyname(1);
+            if !p1.is_null() {
+                Some(std::ffi::CStr::from_ptr(p1).to_string_lossy().to_string())
+            } else {
+                let p2 = libc::ttyname(2);
+                if !p2.is_null() {
+                    Some(std::ffi::CStr::from_ptr(p2).to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            }
+        };
+
+        let tty = match &tty_path {
+            Some(path) => std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)
+                .or_else(|_| {
+                    std::fs::OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open("/dev/tty")
+                }),
+            None => std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/tty"),
+        };
+
+        let tty = match tty {
             Ok(f) => f,
             Err(e) => {
                 eprintln!(
-                    "Error: Cannot open /dev/tty for interactive terminal: {}",
+                    "Error: Cannot open terminal device for interactive stdin stream: {}",
                     e
                 );
                 std::process::exit(1);
