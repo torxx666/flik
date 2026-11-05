@@ -59,19 +59,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CLEAN_WS="${GITHUB_WORKSPACE//\\//}"
-          export RUSTFLAGS="--remap-path-prefix=$CLEAN_WS=."
+          if [[ "$TARGET" != *-windows-* ]]; then
+            export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=."
+          fi
           if [[ "$TARGET" == *-linux-musl ]]; then
             export CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
           fi
-          cargo test --locked --all-targets --target "$TARGET"
+          if [[ "$TARGET" == *-windows-* ]]; then
+            cargo test --locked --lib --target "$TARGET"
+          else
+            cargo test --locked --all-targets --target "$TARGET"
+          fi
           cargo build --locked --release --target "$TARGET"
           EXT=""
           if [[ "$TARGET" == *-windows-* ]]; then
             EXT=".exe"
           fi
-          output=$(target/"$TARGET"/release/flik$EXT --version | tr -d '\r')
+          output=$(./target/"$TARGET"/release/flik$EXT --version | tr -d '\r')
           test "$output" = "flik ${TAG#v}"
           if [[ "$TARGET" == *-linux-musl ]]; then
             file "target/$TARGET/release/flik" | grep -E 'statically linked|static-pie linked'
