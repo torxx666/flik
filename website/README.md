@@ -58,3 +58,9 @@ Four practical guides and a guide index are generated from `website/content/guid
 `content/releases.json` contains the public release history, practical benefits and limits. Regenerate it with `python3 website/scripts/build_releases.py`. Update its release entry and the static `Latest` badge in `dist/index.html` when a new stable version is verified; the existing release API refresh also updates the badge when available. The static value remains readable without JavaScript.
 
 Guide review dates and version scopes live in `content/guides.json`. Rebuild with `python3 website/scripts/build_guides.py website/content/guides.json website/dist`; change the reviewed scope deliberately rather than silently tying every guide to the latest API version. Include new public pages in `dist/sitemap.xml`.
+
+## Real screens and use cases
+
+`content/use-cases.json` holds three reproducible workflows, rendered by `python3 website/scripts/build_use_cases.py`. Terminal captures are recorded from Flik 0.3.0 with `python3 scripts/capture_release_screens.py --binary /absolute/path/to/flik`. This requires Pillow and pyte and uses synthetic data only, an isolated config and a PTY. It renders the captured terminal buffer without inventing UI content. Downloadable inputs live in `dist/assets/samples/incident/`, PNG/WebP captures and their command/verification manifest in `dist/assets/screens/`.
+
+After editing shared navigation on the homepage, rebuild guides, releases and use cases so all pages retain the same header and footer. Screenshots are clickable at full resolution; static captures do not constitute a narrated video.

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "live-merge",
+    "label": "BACKEND / INCIDENT INVESTIGATION",
+    "title": "An API timeout. A worker retry. One view.",
+    "summary": "Bring three local service logs together and keep the source of each event visible.",
+    "command": "flik -m api.log worker.log auth.log",
+    "screen": "live-merge",
+    "alt": "Flik 0.3.0 merged stream with colored api.log, worker.log and auth.log source labels, an API upstream timeout and a worker retry",
+    "see": "The API reports upstream timeout at 10:00:52. The worker schedules a retry at 10:00:56. Colored source labels distinguish each service in the combined stream.",
+    "result": "Inspect the API error and worker retry in the same view, with their filenames and timestamps preserved. Shared request text is a clue to investigate, not proof of causality.",
+    "steps": ["Download api.log, worker.log and auth.log into a new empty directory, keeping these filenames.", "Run the command above. These fixtures contain 60 synthetic events with interleaved timestamps.", "Look for upstream timeout in api.log and retry scheduled in worker.log. Follow mode continues polling the local files."],
+    "files": ["api.log", "worker.log", "auth.log"],
+    "limits": "Existing events and each live polling batch are timestamp-sorted. Late arrivals stay appended. Initial inputs are loaded into memory and the temporary merged file grows; same-size or larger replacement files can miss events."
+  },
+  {
+    "id": "long-split",
+    "label": "DEVOPS / LIVE LOG READING",
+    "title": "Keep the previous pages beside the current events.",
+    "summary": "Use a wide terminal to retain more consecutive history while following a stream.",
+    "command": "flik -m -l api.log worker.log auth.log",
+    "screen": "long-split",
+    "alt": "Flik long-split mode showing three populated consecutive pages labelled p-2, p-1 and Current",
+    "see": "The headings p-2, p-1 and Current mark three consecutive pages, ordered from left to right. Source colors stay visible in every column.",
+    "result": "Keep earlier events on screen beside the current page. The columns represent consecutive history, not separate services.",
+    "steps": ["Use the same three downloadable incident files in a wide terminal.", "Start with -m -l to combine the files and select the three-column layout.", "Read the pages from left to right. Press Tab or 4 to cycle layouts and compare the same input."],
+    "files": ["api.log", "worker.log", "auth.log"],
+    "limits": "A wide terminal is needed for readable columns; long messages can be truncated in the visible view. This layout does not change merge ordering. View changes are saved in your Flik configuration."
+  },
+  {
+    "id": "json-inspector",
+    "label": "KUBERNETES / STRUCTURED PAYLOADS",
+    "title": "Read the nested payload behind a container log line.",
+    "summary": "Inspect a structured event without moving its payload into another tool.",
+    "command": "flik kubernetes.log",
+    "screen": "json-inspector",
+    "alt": "Flik JSON inspector modal with an expanded Kubernetes application payload including service, request_id and nested gateway fields",
+    "see": "The JSON inspector expands the selected event. The payload contains an amount, currency and nested gateway region and status fields.",
+    "result": "Read the structured values behind a long container record before deciding which condition to investigate next.",
+    "steps": ["Download kubernetes.log into a new empty directory and open it with the command above.", "Select a record, then press uppercase J to open the JSON inspector.", "Read the service, request_id and payload.gateway values. Press Escape to return to the log view."],
+    "files": ["kubernetes.log"],
+    "limits": "The inspector depends on a parseable structured payload. The screenshot uses the bundled synthetic Kubernetes fixture; it does not connect to a cluster or retrieve cloud logs."
+  }
+]

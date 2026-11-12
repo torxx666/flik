@@ -1,0 +1,45 @@
+[
+  {
+    "name": "live-merge",
+    "command": "flik -m api.log worker.log auth.log",
+    "keys": "",
+    "columns": 120,
+    "rows": 28,
+    "verified_visible": [
+      "api.log",
+      "worker.log",
+      "auth.log",
+      "retry scheduled"
+    ],
+    "version": "0.3.0",
+    "synthetic": true
+  },
+  {
+    "name": "long-split",
+    "command": "flik -m -l api.log worker.log auth.log",
+    "keys": "",
+    "columns": 180,
+    "rows": 26,
+    "verified_visible": [
+      "LONG-SPLIT",
+      "p-2",
+      "p-1",
+      "Current"
+    ],
+    "version": "0.3.0",
+    "synthetic": true
+  },
+  {
+    "name": "json-inspector",
+    "command": "flik kubernetes.log",
+    "keys": "J",
+    "columns": 115,
+    "rows": 30,
+    "verified_visible": [
+      "JSON",
+      "gateway"
+    ],
+    "version": "0.3.0",
+    "synthetic": true
+  }
+]

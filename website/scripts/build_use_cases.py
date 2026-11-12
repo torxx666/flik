@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Build visual, reproducible product scenarios using captured terminal screens."""
+import html,json
+from pathlib import Path
+from site_shell import shared_shell
+ROOT=Path(__file__).resolve().parents[1]
+e=html.escape
+cases=json.loads((ROOT/'content/use-cases.json').read_text())
+sections=[]
+for c in cases:
+ files=' · '.join(f'<a href="/assets/samples/incident/{e(f)}" download="{e(f)}">{e(f)} ↓</a>' for f in c['files'])
+ sections.append(f'''<section id="{c['id']}" class="visual-scenario"><p class="eyebrow">{e(c['label'])}</p><h2>{e(c['title'])}</h2><p class="lead">{e(c['summary'])}</p><figure class="product-shot"><a href="/assets/screens/{c['screen']}.png" target="_blank" rel="noopener"><img src="/assets/screens/{c['screen']}.webp" alt="{e(c['alt'],quote=True)}" loading="lazy" width="{2208 if c['screen']=='long-split' else 1488 if c['screen']=='live-merge' else 1428}" height="{724 if c['screen']=='long-split' else 772 if c['screen']=='live-merge' else 820}"></a><figcaption>Flik 0.3.0 · captured from a real terminal session with synthetic data · <a href="/assets/screens/{c['screen']}.png" target="_blank" rel="noopener">Open full-size screenshot ↗</a></figcaption></figure><div class="scenario-steps"><div><h3>Reproduce it</h3><p>{files}</p><pre><code>{e(c['command'])}</code></pre><ol>{''.join('<li>'+e(step)+'</li>' for step in c['steps'])}</ol></div><div class="scenario-result"><h3>What to look for</h3><p>{e(c['see'])}</p><h3>What you get</h3><p>{e(c['result'])}</p></div></div><aside class="note"><strong>Scope and limits</strong><p>{e(c['limits'])}</p></aside></section>''')
+body='''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flik use cases — real screens and runnable log investigations</title><meta name="description" content="See Flik in action: investigate an API timeout across service logs, follow three pages of history and inspect Kubernetes JSON. Screenshots and downloadable examples."><link rel="canonical" href="https://flik.spedo.dev/use-cases.html"><meta property="og:title" content="Flik use cases — see the investigation"><meta property="og:image" content="https://flik.spedo.dev/assets/screens/live-merge.png"></head><body><main id="main"><p class="eyebrow">FLIK / REAL WORKFLOWS</p><h1>See the investigation.<br>Run it yourself.</h1><p class="lead">Three concrete tasks, captured in Flik 0.3.0. Every scenario includes the input files, command and visible result.</p><nav aria-label="Use cases">'''+''.join('<a href="#'+c['id']+'">'+e(c['label'].split(' / ')[0].title())+'</a>' for c in cases)+'''</nav>'''+''.join(sections)+'''<section class="cta"><h2>Try it with your own logs</h2><p>Start with the synthetic files above, then use a local file from your own workload. Log contents stay on your machine.</p><a class="button" href="/#install">Download Flik →</a> <a href="/guides/">Read the investigation guides →</a></section></main></body></html>'''
+(ROOT/'dist/use-cases.html').write_text(shared_shell(body))
+print('Built three visual use cases')

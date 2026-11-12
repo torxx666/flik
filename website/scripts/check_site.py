@@ -30,7 +30,7 @@ for link in page.links:
     if link.startswith('#'):
         assert link == '#' or link[1:] in page.ids, f'Missing anchor: {link}'
     elif not re.match(r'https?://', link):
-        target=root/link
+        target=root/urlsplit(link).path
         if target.is_dir():target=target/'index.html'
         assert target.is_file(), f'Missing asset: {link}'
 # Guides need complete HTML content and working relative/root links without JavaScript.
