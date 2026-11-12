@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render task-oriented, crawlable HTML guides from reviewed editorial content."""
 import argparse,html,json,re
+from site_shell import shared_shell
 from pathlib import Path
 
 def render(config_path,output):
@@ -23,9 +24,9 @@ def render(config_path,output):
         article_body=re.sub(r'<h2>(.*?)</h2>',heading,guide['body'],flags=re.S)
         contents='<aside class="toc" aria-label="On this page"><strong>On this page</strong><ul>'+''.join('<li><a href="#'+slug+'">'+e(label)+'</a></li>' for slug,label in toc)+'</ul></aside>'
         body='<p class="breadcrumbs"><a href="/">'+e(brand)+'</a> / <a href="'+hub+'">Practical guides</a></p><p class="eyebrow">'+e(guide['category'])+'</p><h1>'+e(guide['title'])+'</h1><p class="lead">'+e(guide['description'])+'</p><p class="updated">Updated '+e(config.get('updated_label','October 27, 2026'))+' · '+e(guide['scope'])+'</p>'+contents+article_body+'<section class="cta"><h2>Try it on your own workload</h2><p>'+e(config['cta_text'])+'</p><a class="button" href="'+config['cta']+'">'+e(config['cta_label'])+' →</a></section><section><h2>Continue the investigation</h2><div class="grid">'+''.join(card(g) for g in guides if g!=guide)+'</div></section>'
-        dest=out/guide['file'];dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(shell(guide['path'],guide['title'],guide['description'],body,True))
+        dest=out/guide['file'];dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(shared_shell(shell(guide['path'],guide['title'],guide['description'],body,True)))
     body='<p class="eyebrow">'+e(brand)+' / practical guides</p><h1>'+e(config['hub_title'])+'</h1><p class="lead">'+e(config['hub_description'])+'</p><div class="grid">'+''.join(card(g) for g in guides)+'</div><aside class="note">'+e(config['hub_note'])+'</aside>'
-    dest=out/config['hub_file'];dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(shell(hub,config['hub_title'],config['hub_description'],body))
+    dest=out/config['hub_file'];dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(shared_shell(shell(hub,config['hub_title'],config['hub_description'],body)))
     return [hub]+[g['path'] for g in guides]
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('content');parser.add_argument('output');args=parser.parse_args();print(json.dumps(render(args.content,args.output)))
