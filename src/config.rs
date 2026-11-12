@@ -22,6 +22,7 @@ pub struct GeneralConfig {
     pub show_line_numbers: Option<bool>,
     pub enable_coloration: Option<bool>,
     pub theme: Option<String>,
+    pub default_view: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -129,14 +130,37 @@ impl FlikConfig {
             app.ui_state.enable_coloration = ec;
         }
         if let Some(ref theme_str) = self.general.theme {
-            match theme_str.to_lowercase().as_str() {
-                "light" => app.theme = crate::ui::theme::Theme::light(),
-                "default" | "dark" => app.theme = crate::ui::theme::Theme::default(),
-                _ => {}
+            if let Some(mode) = crate::ui::theme::ThemeMode::from_str_name(theme_str) {
+                app.theme_mode = mode;
+                app.theme = mode.to_theme();
+                app.light_theme_enabled = mode != crate::ui::theme::ThemeMode::DarkSlate;
+            }
+        }
+        if let Some(ref dv) = self.general.default_view {
+            match dv.to_lowercase().as_str() {
+                "table" | "columnstable" => app.format.view_mode = crate::format::ViewMode::ColumnsTable,
+                "long_split" | "longsplit" | "split3" => app.format.view_mode = crate::format::ViewMode::LongSplit,
+                _ => app.format.view_mode = crate::format::ViewMode::CompactLine,
             }
         }
         if let Some(thresh) = self.alerts.threshold {
             app.ui_state.alert_threshold = thresh;
+        }
+    }
+
+    /// Automatically persist updated general preferences to config.toml
+    pub fn save_general_preference<F>(update_fn: F)
+    where
+        F: FnOnce(&mut GeneralConfig),
+    {
+        if let Some(dir) = Self::config_dir() {
+            let _ = fs::create_dir_all(&dir);
+            let mut config = Self::load_from_dir(&dir);
+            update_fn(&mut config.general);
+            let config_file = dir.join("config.toml");
+            if let Ok(toml_str) = toml::to_string_pretty(&config) {
+                let _ = fs::write(config_file, toml_str);
+            }
         }
     }
 

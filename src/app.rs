@@ -34,6 +34,7 @@ pub struct App {
     pub mouse_capture_enabled: bool,
     pub last_click: Option<(Instant, u16, u16)>,
     pub last_alert_scanned_line: usize,
+    pub last_filtered_count: usize,
 }
 
 fn copy_text_to_clipboard(text: &str) {
@@ -259,6 +260,7 @@ impl App {
             mouse_capture_enabled: true,
             last_click: None,
             last_alert_scanned_line: 0,
+            last_filtered_count: 0,
         })
     }
 
@@ -286,14 +288,19 @@ impl App {
             self.ui_state.selected_line = 0;
             self.ui_state.scroll_row = 0;
         }
+        self.last_filtered_count = self.filter.filtered_count(&self.reader);
     }
 
     fn toggle_json_auto_indent(&mut self) {
         self.ui_state.auto_indent_json = !self.ui_state.auto_indent_json;
+        let ai = self.ui_state.auto_indent_json;
+        crate::config::FlikConfig::save_general_preference(move |cfg| {
+            cfg.auto_indent_json = Some(ai);
+        });
         let message = if self.ui_state.auto_indent_json {
-            "JSON auto-indent enabled for all visible log lines"
+            "JSON auto-indent enabled for all visible log lines (saved)"
         } else {
-            "JSON auto-indent disabled"
+            "JSON auto-indent disabled (saved)"
         };
         self.ui_state.status_toast = Some((message.into(), Instant::now()));
     }
@@ -429,19 +436,34 @@ fn is_error_log_line(line: &str) -> bool {
             }
         }
 
+        let total = self.filter.filtered_count(&self.reader);
+        let is_long_split = self.format.view_mode == crate::format::ViewMode::LongSplit;
+
+        // If tail is OFF and reverse order (newest first) is active in standard view,
+        // incoming lines are appended at the top of the display stream.
+        // To keep the view frozen on the exact lines the user is looking at,
+        // we adjust scroll_row and selected_line by the number of new lines.
+        if !self.reader.is_tail_enabled() && self.ui_state.reverse_order && !is_long_split {
+            if total > self.last_filtered_count && self.last_filtered_count > 0 {
+                let diff = total - self.last_filtered_count;
+                self.ui_state.scroll_row = self.ui_state.scroll_row.saturating_add(diff);
+                self.ui_state.selected_line = self.ui_state.selected_line.saturating_add(diff);
+            }
+        }
+        self.last_filtered_count = total;
+
         // Auto-follow if tail mode is active
         if self.reader.is_tail_enabled() {
-            let total = self.filter.filtered_count(&self.reader);
             if total > 0 {
                 let term_height = height.saturating_sub(4) as usize;
-                let near_live_edge = if self.ui_state.reverse_order {
+                let near_live_edge = if self.ui_state.reverse_order && !is_long_split {
                     self.ui_state.selected_line <= 5 || self.ui_state.scroll_row <= 2
                 } else {
                     self.ui_state.selected_line + 5 >= total
                         || self.ui_state.scroll_row + term_height + 2 >= total
                 };
                 if self.ui_state.tail_following || near_live_edge {
-                    if self.ui_state.reverse_order {
+                    if self.ui_state.reverse_order && !is_long_split {
                         self.ui_state.selected_line = 0;
                         self.ui_state.scroll_row = 0;
                     } else {
@@ -453,7 +475,7 @@ fn is_error_log_line(line: &str) -> bool {
         }
     }
 
-    pub(crate) fn handle_key(&mut self, key: KeyEvent, term_height: usize) {
+    pub fn handle_key(&mut self, key: KeyEvent, term_height: usize) {
         // If a modal is open, modal gets priority
         if self.modal != ActiveModal::None {
             self.handle_modal_key(key);
@@ -511,7 +533,7 @@ fn is_error_log_line(line: &str) -> bool {
                 self.format.toggle_view_mode();
                 return;
             }
-            KeyCode::F(5) => {
+            KeyCode::F(5) | KeyCode::Char('5') | KeyCode::Char('(') | KeyCode::Char('t') => {
                 self.execute_menu_action(MenuAction::ToggleTail);
                 return;
             }
@@ -602,7 +624,7 @@ fn is_error_log_line(line: &str) -> bool {
                         self.ui_state.scroll_row =
                             self.ui_state.selected_line.saturating_sub(page_size - 1);
                     }
-                    if self.ui_state.selected_line + 1 >= total_lines {
+                    if self.reader.is_tail_enabled() && self.ui_state.selected_line + 1 >= total_lines {
                         self.ui_state.tail_following = true;
                     }
                 }
@@ -614,7 +636,7 @@ fn is_error_log_line(line: &str) -> bool {
                         (self.ui_state.selected_line + page_size).min(total_lines - 1);
                     self.ui_state.scroll_row = (self.ui_state.scroll_row + page_size)
                         .min(total_lines.saturating_sub(page_size));
-                    if self.ui_state.selected_line + 1 >= total_lines {
+                    if self.reader.is_tail_enabled() && self.ui_state.selected_line + 1 >= total_lines {
                         self.ui_state.tail_following = true;
                     }
                 }
@@ -633,7 +655,9 @@ fn is_error_log_line(line: &str) -> bool {
             }
             // End of file: G, End
             KeyCode::End | KeyCode::Char('G') => {
-                self.ui_state.tail_following = true;
+                if self.reader.is_tail_enabled() {
+                    self.ui_state.tail_following = true;
+                }
                 if total_lines > 0 {
                     self.ui_state.selected_line = total_lines - 1;
                     self.ui_state.scroll_row = total_lines.saturating_sub(page_size);
@@ -646,14 +670,14 @@ fn is_error_log_line(line: &str) -> bool {
             KeyCode::Right => {
                 self.ui_state.scroll_col += 4;
             }
-            // Direct 1-9 shortcuts
-            KeyCode::Char('1') | KeyCode::Char('h') => {
+            // Direct 1-9 shortcuts & French Mac AZERTY equivalents
+            KeyCode::Char('1') | KeyCode::Char('&') | KeyCode::Char('h') => {
                 self.modal = ActiveModal::Help { tab: 0 };
             }
-            KeyCode::Char('2') | KeyCode::Char('o') => {
+            KeyCode::Char('2') | KeyCode::Char('é') | KeyCode::Char('o') => {
                 self.execute_menu_action(MenuAction::AutoDetectFormat);
             }
-            KeyCode::Char('3') | KeyCode::Char('+') | KeyCode::Char('i') => {
+            KeyCode::Char('3') | KeyCode::Char('"') | KeyCode::Char('+') | KeyCode::Char('i') => {
                 self.modal = ActiveModal::AddFilter {
                     pattern: String::new(),
                     kind: FilterKind::Include,
@@ -664,18 +688,18 @@ fn is_error_log_line(line: &str) -> bool {
             KeyCode::Tab | KeyCode::Char('4') => {
                 self.format.toggle_view_mode();
             }
-            KeyCode::Char('5') | KeyCode::Char('t') => {
+            KeyCode::Char('5') | KeyCode::Char('(') | KeyCode::Char('t') => {
                 self.execute_menu_action(MenuAction::ToggleTail);
             }
-            KeyCode::Char('6') => {
+            KeyCode::Char('6') | KeyCode::Char('§') => {
                 self.modal = ActiveModal::FieldSelector { selected_index: 0 };
             }
-            KeyCode::Char('7') | KeyCode::Char('/') => {
+            KeyCode::Char('7') | KeyCode::Char('è') | KeyCode::Char('/') => {
                 self.modal = ActiveModal::Search {
                     query: self.ui_state.quick_search_term.clone(),
                 };
             }
-            KeyCode::Char('8') | KeyCode::Char('-') | KeyCode::Char('e') => {
+            KeyCode::Char('8') | KeyCode::Char('!') | KeyCode::Char('-') | KeyCode::Char('e') => {
                 self.modal = ActiveModal::AddFilter {
                     pattern: String::new(),
                     kind: FilterKind::Exclude,
@@ -683,7 +707,7 @@ fn is_error_log_line(line: &str) -> bool {
                     is_case_sensitive: false,
                 };
             }
-            KeyCode::Char('9') | KeyCode::Char('m') => {
+            KeyCode::Char('9') | KeyCode::Char('ç') | KeyCode::Char('m') => {
                 self.menu.toggle();
             }
             KeyCode::Char('x') => {
@@ -767,10 +791,10 @@ fn is_error_log_line(line: &str) -> bool {
                 self.execute_menu_action(MenuAction::ToggleReverseOrder);
             }
             KeyCode::Char('c') => {
-                self.ui_state.enable_coloration = !self.ui_state.enable_coloration;
+                self.execute_menu_action(MenuAction::ToggleColoration);
             }
             KeyCode::Char('n') => {
-                self.ui_state.show_line_numbers = !self.ui_state.show_line_numbers;
+                self.execute_menu_action(MenuAction::ToggleLineNumbers);
             }
             KeyCode::Char('w') => self.toggle_json_auto_indent(),
             KeyCode::Char('r') => {
@@ -1789,7 +1813,7 @@ fn is_error_log_line(line: &str) -> bool {
                 } else if total > 0 {
                     self.ui_state.selected_line = total - 1;
                 }
-                if total > 0 && self.ui_state.selected_line + 1 >= total {
+                if total > 0 && self.ui_state.selected_line + 1 >= total && self.reader.is_tail_enabled() {
                     self.ui_state.tail_following = true;
                 }
             }
@@ -1859,7 +1883,25 @@ fn is_error_log_line(line: &str) -> bool {
                             self.last_click = None;
                             return;
                         };
-                        let clicked_line_idx = self.ui_state.scroll_row + line_offset;
+                        let clicked_line_idx = if self.format.view_mode == crate::format::ViewMode::LongSplit {
+                            let avail_w = term_width.saturating_sub(4);
+                            let col_w = (avail_w / 3).max(1);
+                            let col_idx = ((mouse.column as usize).saturating_sub(1) / (col_w + 1)).min(2);
+                            let page_size = term_height.saturating_sub(5).max(1);
+                            let col_start = match (col_idx, self.ui_state.reverse_order) {
+                                (0, false) => self.ui_state.scroll_row.saturating_sub(2 * page_size),
+                                (1, false) => self.ui_state.scroll_row.saturating_sub(page_size),
+                                (2, false) => self.ui_state.scroll_row,
+                                (0, true) => (self.ui_state.scroll_row + 2 * page_size).min(total),
+                                (1, true) => (self.ui_state.scroll_row + page_size).min(total),
+                                (2, true) => self.ui_state.scroll_row,
+                                _ => self.ui_state.scroll_row,
+                            };
+                            let line_off = line_offset.saturating_sub(1);
+                            col_start + line_off
+                        } else {
+                            self.ui_state.scroll_row + line_offset
+                        };
                         if clicked_line_idx < total {
                             let now = Instant::now();
                             let is_double_click =
@@ -1910,7 +1952,7 @@ fn is_error_log_line(line: &str) -> bool {
                                     }
                                 }
                                 self.ui_state.selected_line = clicked_line_idx;
-                                if clicked_line_idx + 1 >= total {
+                                if clicked_line_idx + 1 >= total && self.reader.is_tail_enabled() {
                                     self.ui_state.tail_following = true;
                                 } else {
                                     self.ui_state.tail_following = false;
@@ -1918,7 +1960,7 @@ fn is_error_log_line(line: &str) -> bool {
                                 self.last_click = None;
                             } else {
                                 self.ui_state.selected_line = clicked_line_idx;
-                                if clicked_line_idx + 1 >= total {
+                                if clicked_line_idx + 1 >= total && self.reader.is_tail_enabled() {
                                     self.ui_state.tail_following = true;
                                 } else {
                                     self.ui_state.tail_following = false;
@@ -1952,10 +1994,12 @@ fn is_error_log_line(line: &str) -> bool {
             MenuAction::ToggleTail => {
                 let enabled = self.reader.toggle_tail();
                 self.ui_state.tail_following = enabled;
+                let total = self.filter.filtered_count(&self.reader);
+                self.last_filtered_count = total;
+                let is_long_split = self.format.view_mode == crate::format::ViewMode::LongSplit;
                 if enabled {
-                    let total = self.filter.filtered_count(&self.reader);
                     if total > 0 {
-                        if self.ui_state.reverse_order {
+                        if self.ui_state.reverse_order && !is_long_split {
                             self.ui_state.selected_line = 0;
                             self.ui_state.scroll_row = 0;
                         } else {
@@ -2026,7 +2070,27 @@ fn is_error_log_line(line: &str) -> bool {
                 };
             }
             MenuAction::ToggleViewMode => {
-                self.format.toggle_view_mode();
+                let vm = self.format.toggle_view_mode();
+                let total = self.filter.filtered_count(&self.reader);
+                if vm == crate::format::ViewMode::LongSplit && self.reader.is_tail_enabled() && total > 0 {
+                    self.ui_state.selected_line = total - 1;
+                    self.ui_state.scroll_row = total.saturating_sub(20);
+                }
+                let vm_name = match vm {
+                    crate::format::ViewMode::CompactLine => "Compact Line View",
+                    crate::format::ViewMode::ColumnsTable => "Columns Table View",
+                    crate::format::ViewMode::LongSplit => "Long-Split 3-Column View (p-2 | p-1 | Current)",
+                };
+                let vm_key = match vm {
+                    crate::format::ViewMode::CompactLine => "compact",
+                    crate::format::ViewMode::ColumnsTable => "table",
+                    crate::format::ViewMode::LongSplit => "long_split",
+                };
+                crate::config::FlikConfig::save_general_preference(move |cfg| {
+                    cfg.default_view = Some(vm_key.to_string());
+                });
+                self.ui_state.status_toast =
+                    Some((format!("Switched to {} (saved)", vm_name), Instant::now()));
             }
             MenuAction::SelectFields => {
                 self.modal = ActiveModal::FieldSelector { selected_index: 0 };
@@ -2142,26 +2206,43 @@ fn is_error_log_line(line: &str) -> bool {
             }
             MenuAction::ToggleLineNumbers => {
                 self.ui_state.show_line_numbers = !self.ui_state.show_line_numbers;
+                let sln = self.ui_state.show_line_numbers;
+                crate::config::FlikConfig::save_general_preference(move |cfg| {
+                    cfg.show_line_numbers = Some(sln);
+                });
             }
             MenuAction::ToggleColoration => {
                 self.ui_state.enable_coloration = !self.ui_state.enable_coloration;
+                let ec = self.ui_state.enable_coloration;
+                crate::config::FlikConfig::save_general_preference(move |cfg| {
+                    cfg.enable_coloration = Some(ec);
+                });
             }
             MenuAction::ToggleTheme => {
                 self.theme_mode = self.theme_mode.next();
                 self.theme = self.theme_mode.to_theme();
                 self.light_theme_enabled = self.theme_mode != crate::ui::theme::ThemeMode::DarkSlate;
+                let mode_str = self.theme_mode.as_str().to_string();
+                crate::config::FlikConfig::save_general_preference(move |cfg| {
+                    cfg.theme = Some(mode_str);
+                });
                 self.ui_state.status_toast =
-                    Some((format!("{} theme enabled", self.theme_mode.name()), Instant::now()));
+                    Some((format!("{} theme enabled (saved)", self.theme_mode.name()), Instant::now()));
             }
             MenuAction::ToggleReverseOrder => {
                 self.ui_state.reverse_order = !self.ui_state.reverse_order;
+                let ro = self.ui_state.reverse_order;
+                crate::config::FlikConfig::save_general_preference(move |cfg| {
+                    cfg.reverse_order = Some(ro);
+                });
                 self.ui_state.selected_line = 0;
                 self.ui_state.scroll_row = 0;
+                self.last_filtered_count = self.filter.filtered_count(&self.reader);
                 self.ui_state.tail_following = self.reader.is_tail_enabled();
                 let message = if self.ui_state.reverse_order {
-                    "Newest log lines are now shown first"
+                    "Newest log lines are now shown first (saved)"
                 } else {
-                    "Oldest log lines are now shown first"
+                    "Oldest log lines are now shown first (saved)"
                 };
                 self.ui_state.status_toast = Some((message.into(), Instant::now()));
             }
@@ -2221,13 +2302,17 @@ fn is_error_log_line(line: &str) -> bool {
             }
             MenuAction::ToggleMouseCapture => {
                 self.mouse_capture_enabled = !self.mouse_capture_enabled;
+                let mc = self.mouse_capture_enabled;
+                crate::config::FlikConfig::save_general_preference(move |cfg| {
+                    cfg.mouse_capture = Some(mc);
+                });
                 if self.mouse_capture_enabled {
                     let _ = crossterm::execute!(
                         std::io::stdout(),
                         crossterm::event::EnableMouseCapture
                     );
                     self.ui_state.status_toast = Some((
-                        "Mouse Capture: ON (TUI scrolling enabled)".to_string(),
+                        "Mouse Capture: ON (saved)".to_string(),
                         Instant::now(),
                     ));
                 } else {
@@ -2236,7 +2321,7 @@ fn is_error_log_line(line: &str) -> bool {
                         crossterm::event::DisableMouseCapture
                     );
                     self.ui_state.status_toast = Some((
-                        "Mouse Capture: OFF (Native Mac text selection enabled!)".to_string(),
+                        "Mouse Capture: OFF (saved)".to_string(),
                         Instant::now(),
                     ));
                 }
@@ -2467,6 +2552,18 @@ fn is_error_log_line(line: &str) -> bool {
     }
 }
 
+impl Drop for App {
+    fn drop(&mut self) {
+        self.filter
+            .cancel_signal
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.reader.stop();
+        if let Some(handle) = self.indexer_handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2548,17 +2645,5 @@ mod tests {
             extract_word_at_pos(&displayed, byte_offset).as_deref(),
             Some("JWT")
         );
-    }
-}
-
-impl Drop for App {
-    fn drop(&mut self) {
-        self.filter
-            .cancel_signal
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        self.reader.stop();
-        if let Some(handle) = self.indexer_handle.take() {
-            let _ = handle.join();
-        }
     }
 }

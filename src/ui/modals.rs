@@ -485,6 +485,7 @@ impl ModalRenderer {
         let view_name = match format_mgr.view_mode {
             crate::format::ViewMode::CompactLine => "Compact Line View",
             crate::format::ViewMode::ColumnsTable => "Columns Table View",
+            crate::format::ViewMode::LongSplit => "Long-Split 3-Page View",
         };
 
         let sub_line = Line::from(vec![

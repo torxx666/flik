@@ -6,6 +6,8 @@ __pycache__/
 .env
 .env.*
 /live_stream.log
+/*.log
+/*.log~
 /REVUE_PRO.md
 /remarks_externes.md
 /artifacts/

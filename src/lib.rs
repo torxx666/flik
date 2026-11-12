@@ -15,3 +15,4 @@ pub mod session;
 pub mod reports;
 pub mod completion;
 pub mod config;
+pub mod merged_stream;

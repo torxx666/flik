@@ -283,10 +283,10 @@ impl MenuBar {
                         "Sample log lines and auto-configure column structure",
                     ),
                     MenuItem::item(
-                        "Switch View (Line / Table)",
+                        "Switch View (Line / Table / Long-Split)",
                         "4 / Tab",
                         MenuAction::ToggleViewMode,
-                        "Toggle between compact line and structured column table",
+                        "Cycle through compact lines, table columns, and 3-column long-split view",
                     ),
                     MenuItem::item(
                         "Select Columns / Fields",
@@ -655,9 +655,9 @@ impl MenuBar {
             .as_millis() as u64;
         let pulse = (now_m / 450) % 2 == 0;
 
-        let (loupiote_str, loupiote_style) = if is_growing {
+        let (loupiote_str, loupiote_style) = if is_tail {
             let dot = if pulse { "🟢" } else { "●" };
-            if is_tail {
+            if is_growing {
                 (
                     format!(" [ {} LIVE (TAILING) ] ", dot),
                     Style::default()
@@ -666,26 +666,25 @@ impl MenuBar {
                         .add_modifier(ratatui::style::Modifier::BOLD),
                 )
             } else {
-                let msg = if incoming > 0 {
-                    format!(" [ {} LIVE: +{} NEW (5:Follow) ] ", dot, incoming)
-                } else {
-                    format!(" [ {} LIVE STREAM ] ", dot)
-                };
                 (
-                    msg,
+                    " [ 🟢 TAIL: WAITING ] ".to_string(),
                     Style::default()
-                        .bg(ratatui::style::Color::Rgb(160, 80, 0))
-                        .fg(ratatui::style::Color::Rgb(255, 240, 100))
+                        .bg(theme.menu_bar_bg)
+                        .fg(ratatui::style::Color::Cyan)
                         .add_modifier(ratatui::style::Modifier::BOLD),
                 )
             }
-        } else if is_tail {
+        } else if is_growing {
+            let msg = if incoming > 0 {
+                format!(" [ ⏸ PAUSED (+{} buff - 5/t:Follow) ] ", incoming)
+            } else {
+                " [ ⏸ PAUSED (5/t:Follow) ] ".to_string()
+            };
             (
-                " [ 🟢 TAIL: WAITING ] ".to_string(),
+                msg,
                 Style::default()
                     .bg(theme.menu_bar_bg)
-                    .fg(ratatui::style::Color::Cyan)
-                    .add_modifier(ratatui::style::Modifier::BOLD),
+                    .fg(ratatui::style::Color::DarkGray),
             )
         } else {
             (
@@ -763,10 +762,10 @@ impl MenuBar {
                 "[✓] Mouse Interaction (Click/Scroll)".to_string()
             }
             MenuAction::ToggleViewMode => {
-                if matches!(format_mgr.view_mode, crate::format::ViewMode::ColumnsTable) {
-                    "Switch View: [●] Columns Table".to_string()
-                } else {
-                    "Switch View: [●] Compact Lines".to_string()
+                match format_mgr.view_mode {
+                    crate::format::ViewMode::CompactLine => "Switch View: [●] Compact Lines".to_string(),
+                    crate::format::ViewMode::ColumnsTable => "Switch View: [●] Columns Table".to_string(),
+                    crate::format::ViewMode::LongSplit => "Switch View: [●] Long-Split (p-2|p-1|Current)".to_string(),
                 }
             }
             MenuAction::AutoDetectFormat => {

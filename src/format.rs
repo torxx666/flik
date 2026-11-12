@@ -56,6 +56,7 @@ impl LogFormat {
 pub enum ViewMode {
     CompactLine,
     ColumnsTable,
+    LongSplit,
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +80,7 @@ pub struct FieldInspectionResult {
     pub values: Vec<FieldValueCount>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ParsedRecord {
     pub timestamp: Option<String>,
     pub level: Option<String>,
@@ -87,11 +88,34 @@ pub struct ParsedRecord {
     pub message: String,
     pub fields: Vec<ParsedField>,
     pub tokens: Vec<String>,
+    pub source: Option<String>,
+    pub format: LogFormat,
+}
+
+impl Default for ParsedRecord {
+    fn default() -> Self {
+        Self {
+            timestamp: None,
+            level: None,
+            status: None,
+            message: String::new(),
+            fields: Vec::new(),
+            tokens: Vec::new(),
+            source: None,
+            format: LogFormat::Raw,
+        }
+    }
 }
 
 impl ParsedRecord {
     pub fn get_field_value(&self, key: &str) -> Option<&str> {
         let clean_key = key.trim();
+
+        if clean_key == "source" || clean_key == "file" || clean_key == "filename" {
+            if let Some(ref s) = self.source {
+                return Some(s.as_str());
+            }
+        }
 
         if let Some(inner_key) = clean_key.strip_prefix("log.") {
             return self
@@ -176,6 +200,45 @@ impl ParsedRecord {
 
         None
     }
+}
+
+/// If a line starts with a source tag like `[auth.log] ` or `[api.log] `,
+/// extract the source name and return the rest of the line.
+pub fn extract_source_label(line: &str) -> (Option<&str>, &str) {
+    if !line.starts_with('[') {
+        return (None, line);
+    }
+    if let Some(close_idx) = line.find("] ") {
+        if close_idx > 1 && close_idx <= 64 {
+            let label = &line[1..close_idx];
+            // Reject if it has spaces, colons, or matches common log level keywords
+            if !label.contains(' ')
+                && !label.contains(':')
+                && !matches!(
+                    label.to_uppercase().as_str(),
+                    "INFO"
+                        | "WARN"
+                        | "WARNING"
+                        | "ERROR"
+                        | "ERR"
+                        | "DEBUG"
+                        | "TRACE"
+                        | "CRIT"
+                        | "CRITICAL"
+                        | "FATAL"
+                        | "NOTICE"
+                        | "ALERT"
+                        | "EMERG"
+                        | "STDIN"
+                        | "STDOUT"
+                        | "STDERR"
+                )
+            {
+                return (Some(label), &line[close_idx + 2..]);
+            }
+        }
+    }
+    (None, line)
 }
 
 /// Tokenize a raw log line by recognizing bracketed groups [...], quotes "..." / '...',
@@ -635,7 +698,13 @@ impl FormatManager {
         let mut max_tokens = 0usize;
 
         for (idx, line) in sample_lines.iter().enumerate() {
-            let trimmed = line.trim();
+            let raw_trimmed = line.trim();
+            if raw_trimmed.is_empty() {
+                continue;
+            }
+
+            let (_, content) = extract_source_label(raw_trimmed);
+            let trimmed = content.trim();
             if trimmed.is_empty() {
                 continue;
             }
@@ -970,24 +1039,64 @@ impl FormatManager {
     }
 
     pub fn parse_line(&self, line: &str) -> ParsedRecord {
-        let fmt = self.active_format();
-        match fmt {
-            LogFormat::Json => self.parse_json(line),
-            LogFormat::Logfmt => self.parse_logfmt(line),
-            LogFormat::Kubernetes => self.parse_kubernetes(line),
-            LogFormat::ApacheCombined | LogFormat::ApacheCommon => self.parse_apache(line),
-            LogFormat::ApacheError => self.parse_apache_error(line),
-            LogFormat::NginxError => self.parse_nginx_error(line),
-            LogFormat::Syslog => self.parse_syslog(line),
-            LogFormat::Custom => self.parse_custom(line),
-            LogFormat::Raw | LogFormat::Auto => self.parse_raw(line),
+        let (source, inner_line) = extract_source_label(line);
+        let active_fmt = self.active_format();
+        let mut record = match active_fmt {
+            LogFormat::Json => self.parse_json(inner_line),
+            LogFormat::Logfmt => self.parse_logfmt(inner_line),
+            LogFormat::Kubernetes => self.parse_kubernetes(inner_line),
+            LogFormat::ApacheCombined | LogFormat::ApacheCommon => self.parse_apache(inner_line),
+            LogFormat::ApacheError => self.parse_apache_error(inner_line),
+            LogFormat::NginxError => self.parse_nginx_error(inner_line),
+            LogFormat::Syslog => self.parse_syslog(inner_line),
+            LogFormat::Custom => self.parse_custom(inner_line),
+            LogFormat::Raw | LogFormat::Auto => self.parse_raw(inner_line),
+        };
+
+        // If active format fell back to raw (e.g. in multi-file or mixed stream),
+        // try other formats to accurately parse this specific line
+        if record.format == LogFormat::Raw && active_fmt != LogFormat::Raw {
+            let trimmed = inner_line.trim();
+            if (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+            {
+                let json_rec = self.parse_json(inner_line);
+                if json_rec.format == LogFormat::Json {
+                    record = json_rec;
+                }
+            } else if self.syslog_re.is_match(trimmed) {
+                record = self.parse_syslog(inner_line);
+            } else if self.apache_combined_re.is_match(trimmed)
+                || self.apache_vhost_combined_re.is_match(trimmed)
+                || self.apache_common_re.is_match(trimmed)
+            {
+                record = self.parse_apache(inner_line);
+            } else if self.k8s_re.is_match(trimmed) {
+                record = self.parse_kubernetes(inner_line);
+            } else if self.apache_error_re.is_match(trimmed) {
+                record = self.parse_apache_error(inner_line);
+            } else if self.nginx_error_re.is_match(trimmed) {
+                record = self.parse_nginx_error(inner_line);
+            } else if parse_logfmt_tokens(trimmed).len() >= 2 {
+                record = self.parse_logfmt(inner_line);
+            }
         }
+
+        if let Some(src) = source {
+            record.source = Some(src.to_string());
+            record.fields.push(ParsedField {
+                key: "source".to_string(),
+                value: src.to_string(),
+            });
+        }
+        record
     }
 
     fn parse_json(&self, line: &str) -> ParsedRecord {
         let trimmed = line.trim();
         if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(trimmed) {
             let mut record = ParsedRecord::default();
+            record.format = LogFormat::Json;
             let mut fields = Vec::new();
 
             for (k, v) in &map {
@@ -1122,6 +1231,7 @@ impl FormatManager {
                 .to_string();
 
             let mut record = ParsedRecord::default();
+            record.format = LogFormat::Json;
             let k_lower = key.to_lowercase();
             if k_lower == "time"
                 || k_lower == "timestamp"
@@ -1252,6 +1362,8 @@ impl FormatManager {
                     },
                 ],
                 tokens: parse_line_tokens(line),
+                source: None,
+                format: LogFormat::Kubernetes,
             };
 
             // If message itself is JSON, also parse inner JSON fields
@@ -1354,6 +1466,8 @@ impl FormatManager {
                 message: full_msg,
                 fields,
                 tokens,
+                source: None,
+                format: LogFormat::ApacheCombined,
             }
         } else if let Some(caps) = self.apache_vhost_combined_re.captures(line) {
             let vhost = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
@@ -1416,6 +1530,8 @@ impl FormatManager {
                 message: full_msg,
                 fields,
                 tokens,
+                source: None,
+                format: LogFormat::ApacheCombined,
             }
         } else if let Some(caps) = self.apache_common_re.captures(line) {
             let ip = caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
@@ -1451,6 +1567,8 @@ impl FormatManager {
                 message: format!("{} {}", req, size),
                 fields,
                 tokens,
+                source: None,
+                format: LogFormat::ApacheCombined,
             }
         } else if self.nginx_error_re.is_match(line) {
             self.parse_nginx_error(line)
@@ -1492,6 +1610,8 @@ impl FormatManager {
                 message: msg,
                 fields,
                 tokens,
+                source: None,
+                format: LogFormat::ApacheError,
             }
         } else {
             let mut rec = self.parse_raw(line);
@@ -1568,6 +1688,8 @@ impl FormatManager {
                 message: clean_msg,
                 fields,
                 tokens,
+                source: None,
+                format: LogFormat::NginxError,
             }
         } else {
             let mut rec = self.parse_raw(line);
@@ -1715,6 +1837,8 @@ impl FormatManager {
                 message: msg,
                 fields,
                 tokens,
+                source: None,
+                format: LogFormat::Syslog,
             }
         } else {
             self.parse_raw(line)
@@ -1724,6 +1848,7 @@ impl FormatManager {
     fn parse_logfmt(&self, line: &str) -> ParsedRecord {
         let pairs = parse_logfmt_tokens(line);
         let mut record = ParsedRecord::default();
+        record.format = LogFormat::Logfmt;
         let mut fields = Vec::new();
 
         for (k, v) in pairs {
@@ -1755,6 +1880,7 @@ impl FormatManager {
         if let Some(ref re) = self.custom_regex {
             if let Some(caps) = re.captures(line) {
                 let mut record = ParsedRecord::default();
+                record.format = LogFormat::Custom;
                 let mut fields = Vec::new();
 
                 for name in re.capture_names().flatten() {
@@ -1813,6 +1939,8 @@ impl FormatManager {
             message: line.to_string(),
             fields,
             tokens,
+            source: None,
+            format: LogFormat::Raw,
         }
     }
 
@@ -1839,7 +1967,8 @@ impl FormatManager {
     pub fn toggle_view_mode(&mut self) -> ViewMode {
         self.view_mode = match self.view_mode {
             ViewMode::CompactLine => ViewMode::ColumnsTable,
-            ViewMode::ColumnsTable => ViewMode::CompactLine,
+            ViewMode::ColumnsTable => ViewMode::LongSplit,
+            ViewMode::LongSplit => ViewMode::CompactLine,
         };
         self.view_mode
     }

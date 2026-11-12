@@ -537,6 +537,12 @@ def main():
         help="Truncate the log file at startup instead of appending",
     )
     parser.add_argument(
+        "-n", "--count",
+        type=int,
+        default=None,
+        help="Number of lines to generate before exiting (default: continuous stream)",
+    )
+    parser.add_argument(
         "--stdout",
         action="store_true",
         help="Output directly to stdout instead of a file",
@@ -545,29 +551,36 @@ def main():
     args = parser.parse_args()
 
     generator_fn = GENERATORS[args.format]
+    delay = args.delay
+    if args.count is not None and "--delay" not in sys.argv and "-d" not in sys.argv:
+        delay = 0.0
 
     # Mode: stdout or file
-    if args.stdout:
+    is_stdout = args.stdout or (not sys.stdout.isatty() and args.file == "live_stream.log")
+    if is_stdout:
         out_target = sys.stdout
-        is_stdout = True
     else:
-        mode = "w" if args.truncate else "a"
+        mode = "w" if (args.truncate or args.count) else "a"
         out_target = open(args.file, mode, encoding="utf-8")
-        is_stdout = False
+
+    show_interactive = sys.stderr.isatty() and not is_stdout
 
     try:
-        if not is_stdout:
-            print("\033[1;36m" + "=" * 70 + "\033[0m")
-            print("\033[1;32m  ⚡ FLIK LIVE LOG GENERATOR ⚡\033[0m")
-            print(f"  Target File : \033[1;33m{os.path.abspath(args.file)}\033[0m")
-            print(f"  Format      : \033[1;35m{args.format}\033[0m")
-            print(f"  Speed       : \033[1;37m{args.delay:.2f}s per line\033[0m (burst: {args.burst})")
-            print("\033[1;36m" + "-" * 70 + "\033[0m")
-            print("  \033[1;33mPour tester dans Flik dans un autre terminal :\033[0m")
-            print(f"    \033[1;32m./flik.sh -f {args.file}\033[0m")
-            print("    (ou ouvrez Flik et appuyez sur \033[1;33m5\033[0m ou \033[1;33mt\033[0m pour activer le suivi en direct)")
-            print("\033[1;36m" + "=" * 70 + "\033[0m")
-            print("\033[0;90mGénération en cours... Appuyez sur Ctrl+C pour arrêter.\033[0m\n")
+        if show_interactive:
+            sys.stderr.write("\033[1;36m" + "=" * 70 + "\033[0m\n")
+            sys.stderr.write("\033[1;32m  ⚡ FLIK LIVE LOG GENERATOR ⚡\033[0m\n")
+            sys.stderr.write(f"  Target File : \033[1;33m{os.path.abspath(args.file)}\033[0m\n")
+            sys.stderr.write(f"  Format      : \033[1;35m{args.format}\033[0m\n")
+            if args.count:
+                sys.stderr.write(f"  Target Count: \033[1;32m{args.count:,} lines\033[0m\n")
+            sys.stderr.write(f"  Speed       : \033[1;37m{delay:.2f}s per line\033[0m (burst: {args.burst})\n")
+            sys.stderr.write("\033[1;36m" + "-" * 70 + "\033[0m\n")
+            sys.stderr.write("  \033[1;33mPour tester dans Flik dans un autre terminal :\033[0m\n")
+            sys.stderr.write(f"    \033[1;32m./flik.sh -f {args.file}\033[0m\n")
+            sys.stderr.write("    (ou ouvrez Flik et appuyez sur \033[1;33m5\033[0m ou \033[1;33mt\033[0m pour activer le suivi en direct)\n")
+            sys.stderr.write("\033[1;36m" + "=" * 70 + "\033[0m\n")
+            sys.stderr.write("\033[0;90mGénération en cours... Appuyez sur Ctrl+C pour arrêter.\033[0m\n\n")
+            sys.stderr.flush()
 
         line_count = 0
         start_time = time.time()
@@ -581,24 +594,36 @@ def main():
             for _ in range(burst_size):
                 line = generator_fn()
                 out_target.write(line + "\n")
-                out_target.flush()
                 line_count += 1
 
-                if not is_stdout and line_count % 5 == 0:
+                if show_interactive and (line_count % 50 == 0 or (args.count and line_count == args.count)):
                     elapsed = time.time() - start_time
                     lps = line_count / max(elapsed, 0.001)
                     preview = (line[:65] + "…") if len(line) > 65 else line
-                    sys.stdout.write(
+                    sys.stderr.write(
                         f"\r\033[K[\033[1;32m+{line_count}\033[0m lines | \033[1;36m{lps:.1f} logs/s\033[0m] {preview}"
                     )
-                    sys.stdout.flush()
+                    sys.stderr.flush()
 
-            time.sleep(args.delay)
+                if args.count and line_count >= args.count:
+                    break
+
+            if delay > 0:
+                out_target.flush()
+                time.sleep(delay)
+
+            if args.count and line_count >= args.count:
+                break
+
+        if show_interactive and args.count:
+            sys.stderr.write(f"\n\n\033[1;32m✓ Terminé : {line_count:,} lignes écrites avec succès dans {args.file}\033[0m\n")
+            sys.stderr.flush()
 
     except (KeyboardInterrupt, BrokenPipeError):
-        if not is_stdout:
-            print("\n\n\033[1;33mArrêt de la génération de logs.\033[0m")
-            print(f"\033[1;32mTotal : {line_count} lignes écrites dans {args.file}\033[0m")
+        if show_interactive:
+            sys.stderr.write("\n\n\033[1;33mArrêt de la génération de logs.\033[0m\n")
+            sys.stderr.write(f"\033[1;32mTotal : {line_count} lignes écrites dans {args.file}\033[0m\n")
+            sys.stderr.flush()
         else:
             try:
                 sys.stdout.close()

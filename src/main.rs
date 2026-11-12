@@ -21,9 +21,13 @@ struct Cli {
     #[arg(value_name = "FILE")]
     file: PathBuf,
 
-    /// Optional second log file, opened in an independent split pane
-    #[arg(value_name = "SECOND_FILE")]
-    second_file: Option<PathBuf>,
+    /// Additional log files to analyze (opened in split pane or merged stream)
+    #[arg(value_name = "EXTRA_FILES")]
+    extra_files: Vec<PathBuf>,
+
+    /// Merge all input files into a single live interleaved chronological stream
+    #[arg(short = 'm', long = "merge")]
+    merge: bool,
 
     /// Start directly in follow mode (tail -F)
     #[arg(short = 'f', long = "follow")]
@@ -32,6 +36,10 @@ struct Cli {
     /// Start directly in table / columns view
     #[arg(short = 't', long = "table")]
     table: bool,
+
+    /// Start directly in 3-column long-split view (p-2, p-1, current page)
+    #[arg(short = 'l', long = "long-split")]
+    long_split: bool,
 
     /// Initial fields / column range to display (e.g. "5-7", "3,6", "timestamp,level")
     #[arg(short = 'c', long = "fields")]
@@ -74,7 +82,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .as_ref()
         .map(|file| file.path().to_path_buf());
 
-    let target_file = if let Some(ref p) = temp_stdin_path {
+    let mut live_merged: Option<flik::merged_stream::LiveMergedStream> = None;
+    let target_file = if cli.merge && !cli.extra_files.is_empty() {
+        let mut all_files = vec![cli.file.clone()];
+        all_files.extend(cli.extra_files.clone());
+        for f in &all_files {
+            if !f.exists() {
+                eprintln!("Error: File '{}' does not exist.", f.display());
+                std::process::exit(1);
+            }
+        }
+        match flik::merged_stream::LiveMergedStream::start(&all_files) {
+            Ok(stream) => {
+                let p = stream.temp_file.path().to_path_buf();
+                live_merged = Some(stream);
+                p
+            }
+            Err(e) => {
+                eprintln!("Error starting live merged stream: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else if let Some(ref p) = temp_stdin_path {
         p.clone()
     } else {
         if !cli.file.exists() {
@@ -216,18 +245,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    configure_app(&mut app, &cli, is_stdin);
+    configure_app(&mut app, &cli, is_stdin || live_merged.is_some());
+
+    if cli.merge && !cli.extra_files.is_empty() {
+        let mut names: Vec<String> = vec![cli.file.file_name().unwrap_or_default().to_string_lossy().to_string()];
+        for f in &cli.extra_files {
+            names.push(f.file_name().unwrap_or_default().to_string_lossy().to_string());
+        }
+        app.ui_state.title_override = Some(format!("Merged: {}", names.join(" + ")));
+    }
 
     // Run event loop
     let run_res = (|| -> io::Result<()> {
         let mut workspace = flik::workspace::Workspace::new(app);
-        if let Some(path) = &cli.second_file {
+        if !cli.merge
+            && let Some(path) = cli.extra_files.first() {
             workspace.open_other(path)?;
             configure_app(&mut workspace.panes[1], &cli, false);
             workspace.active = 0;
         }
         workspace.run(&mut terminal)
     })();
+
+    if let Some(mut stream) = live_merged {
+        stream.stop();
+    }
 
     // Clean up stdin streaming
     if is_stdin {
@@ -262,7 +304,9 @@ fn configure_app(app: &mut App, cli: &Cli, is_stdin: bool) {
         app.reader.set_tail_enabled(true);
         app.ui_state.tail_following = true;
     }
-    if cli.table {
+    if cli.long_split {
+        app.format.view_mode = ViewMode::LongSplit;
+    } else if cli.table {
         app.format.view_mode = ViewMode::ColumnsTable;
     }
     if let Some(ref re_str) = cli.format_regex {

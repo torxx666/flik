@@ -4,7 +4,7 @@
 
 Open local files or piped streams, inspect structured fields, stack filters and recover the context around an error. Flik is written in Rust and runs on macOS and Linux.
 
-[Website and demonstrations](https://flik.spedo.dev) · [Download binaries](https://github.com/torxx666/flik/releases/latest) · [Release guide](docs/RELEASING.md)
+[Website and demonstrations](https://flik.spedo.dev) · [Download binaries](https://github.com/torxx666/flik/releases/latest) · [Release guide](docs/RELEASING.md) · [Changelog](CHANGELOG.md)
 
 ## Install without building
 
@@ -54,6 +54,9 @@ Flik is designed for multi-gigabyte log analysis without memory bloat:
 ```sh
 flik app.log
 flik api.log worker.log
+flik -m api.log worker.log auth.log
+flik -l app.log
+flik -m -l api.log worker.log auth.log
 flik /var/log/auth.log
 flik --format logfmt app.log
 flik --format-regex '^(?P<ip>\S+) (?P<user>\S+) \[(?P<timestamp>[^\]]+)\] "(?P<request>[^"]*)" (?P<status>\d{3}) (?P<latency>[\d\.]+)$' access.log
@@ -77,6 +80,12 @@ Supported formats and detection:
 * **Kubernetes / CRI-O**: Automatic embedded JSON extraction with `w`.
 
 Flik focuses on interactive incident cockpit analysis, fast temporal correlation (`compare`, `trace`), and split-pane navigation. Keep tools such as `jq` for batch JSON scripting, and `lnav` for complex SQL database queries across files.
+
+### Live merge in 0.3.0
+
+`flik -m api.log worker.log auth.log` combines local files with colored source labels. Add `-l` for three consecutive pages side by side. `Tab` / `4` cycles line, table and long-split views; view and theme changes are saved automatically.
+
+Existing events are sorted by parsed timestamps; live additions are sorted within each polling batch. Late events are appended, so global timestamp order is not guaranteed. The initial merge loads existing lines into memory and writes a temporary combined file, which grows while following. Truncation is detected when size decreases; replacement with a same-size or larger file can miss events. Prefer single-file viewing for very large inputs until merge behavior is evaluated on your workload.
 
 ## Search, stack filters, undo
 
@@ -140,7 +149,7 @@ Shortcuts are case-sensitive. These apply to the main log view unless noted. `1`
 | `/` / `7` | Quick search |
 | `3`, `+`, `i` / `8`, `-`, `e` | Include / exclude filter |
 | `x` / `X` / `Ctrl+F` | Undo / clear / manage filters |
-| `Tab` / `4` | Line / table view |
+| `Tab` / `4` | Line / table / 3-column long-split view |
 | `6` / `R` / `v` | Select fields / field range / inspect values |
 | `w` | Toggle embedded JSON expansion |
 | `5` / `t` | Toggle live following & real-time stream alerting |
@@ -171,7 +180,8 @@ Flik automatically loads settings from `~/.config/flik/config.toml` (or `%APPDAT
 mouse_capture = true
 auto_indent_json = true
 reverse_order = false
-theme = "default"         # "default" or "light"
+theme = "default"             # "default" or "light" (auto-saved)
+default_view = "compact"      # "compact", "table", or "long-split" (auto-saved)
 
 [alerts]
 enabled = false
@@ -181,6 +191,8 @@ threshold = 10
 name = "my_service"
 pattern = '^\[(?P<timestamp>[^\]]+)\] \[(?P<level>[A-Z]+)\] (?P<message>.*)$'
 ```
+
+User preferences like active `theme` (toggled with `T`) and `default_view` (toggled with `4` or `Tab`) are automatically saved to `~/.config/flik/config.toml` when changed in the TUI.
 
 Custom format definitions can also be placed as standalone files in `~/.config/flik/formats/*.toml` and selected via `--format <name>` or dynamically matched during format discovery.
 

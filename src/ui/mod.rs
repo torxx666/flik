@@ -76,6 +76,7 @@ pub struct UiState {
     pub alert_threshold: usize,
     pub alert_toast_shown: bool,
     pub last_stats_refresh: Option<std::time::Instant>,
+    pub title_override: Option<String>,
 }
 
 impl UiState {
@@ -99,6 +100,7 @@ impl UiState {
             alert_threshold: 5,
             alert_toast_shown: false,
             last_stats_refresh: None,
+            title_override: None,
         }
     }
 }
@@ -201,37 +203,48 @@ impl FlikUi {
         ui_state: &UiState,
     ) {
         let total_lines = filter_engine.filtered_count(reader);
-        let live_badge = if reader.is_actively_growing() {
-            if reader.is_tail_enabled() {
+        let live_badge = if reader.is_tail_enabled() {
+            if ui_state.tail_following {
                 " [ 🟢 LIVE STREAM (TAILING) ]"
             } else {
-                " [ 🟢 LIVE (+NEW) ]"
+                " [ ⏸ TAIL PAUSED (SCROLLED UP) ]"
             }
-        } else if reader.is_tail_enabled() {
-            " [ 🟢 TAIL: ON ]"
+        } else if reader.is_actively_growing() {
+            " [ ⏸ TAIL: OFF (STREAMING IN BG) ]"
         } else {
             ""
         };
 
         let order_badge = if ui_state.reverse_order { " [NEWEST FIRST]" } else { "" };
+        let mode_badge = match format_mgr.view_mode {
+            ViewMode::CompactLine => "",
+            ViewMode::ColumnsTable => " [TABLE]",
+            ViewMode::LongSplit => " [LONG-SPLIT: p-2 | p-1 | Current]",
+        };
+        let file_label = ui_state
+            .title_override
+            .as_deref()
+            .unwrap_or_else(|| reader.path.file_name().unwrap_or_default().to_str().unwrap_or(""));
         let title = if filter_engine.has_active_filters() {
             format!(
-                " flik: {} ({:.2} MB) - {} / {} lines [FILTERED]{}{} ",
-                reader.path.file_name().unwrap_or_default().to_string_lossy(),
+                " flik: {} ({:.2} MB) - {} / {} lines [FILTERED]{}{}{} ",
+                file_label,
                 (reader.file_size.load(std::sync::atomic::Ordering::Relaxed) as f64) / (1024.0 * 1024.0),
                 total_lines,
                 reader.line_count(),
                 live_badge,
-                order_badge
+                order_badge,
+                mode_badge
             )
         } else {
             format!(
-                " flik: {} ({:.2} MB) - {} lines{}{} ",
-                reader.path.file_name().unwrap_or_default().to_string_lossy(),
+                " flik: {} ({:.2} MB) - {} lines{}{}{} ",
+                file_label,
                 (reader.file_size.load(std::sync::atomic::Ordering::Relaxed) as f64) / (1024.0 * 1024.0),
                 total_lines,
                 live_badge,
-                order_badge
+                order_badge,
+                mode_badge
             )
         };
 
@@ -258,49 +271,31 @@ impl FlikUi {
             return;
         }
 
+        if matches!(format_mgr.view_mode, ViewMode::LongSplit) {
+            Self::render_long_split_view(
+                inner,
+                buf,
+                theme,
+                reader,
+                format_mgr,
+                filter_engine,
+                ui_state,
+                total_lines,
+            );
+            return;
+        }
+
         let visible_height = inner.height as usize;
         let start_row = ui_state.scroll_row;
         let end_row = (start_row + visible_height).min(total_lines);
 
-        // Read the visible page in one file operation where possible.
-        let display_indices: Vec<usize> = (start_row..end_row)
-            .map(|row| source_display_index(row, total_lines, ui_state.reverse_order))
-            .collect();
-        let display_lines: Vec<(usize, usize, String)> = if filter_engine.has_active_filters() {
-            let rows: Vec<(usize, usize)> = display_indices
-                .iter()
-                .enumerate()
-                .filter_map(|row| {
-                    filter_engine
-                        .get_original_line_index(*row.1, reader)
-                        .map(|original_idx| (start_row + row.0, original_idx))
-                })
-                .collect();
-            let original_indices: Vec<usize> = rows.iter().map(|(_, idx)| *idx).collect();
-            reader
-                .read_lines(&original_indices)
-                .into_iter()
-                .zip(rows)
-                .filter_map(|(line, (row, original_idx))| {
-                    line.map(|line| (row, original_idx, line))
-                })
-                .collect()
-        } else if ui_state.reverse_order {
-            reader
-                .read_lines(&display_indices)
-                .into_iter()
-                .zip(start_row..end_row)
-                .filter_map(|(line, display_idx)| {
-                    line.map(|line| (display_idx, source_display_index(display_idx, total_lines, true), line))
-                })
-                .collect()
-        } else {
-            reader
-                .read_range(start_row, end_row.saturating_sub(start_row))
-                .into_iter()
-                .map(|(row, line)| (row, row, line))
-                .collect()
-        };
+        let display_lines = Self::fetch_display_lines(
+            start_row..end_row,
+            total_lines,
+            ui_state.reverse_order,
+            filter_engine,
+            reader,
+        );
 
         match format_mgr.view_mode {
             ViewMode::CompactLine => {
@@ -326,6 +321,188 @@ impl FlikUi {
                     ui_state,
                 );
             }
+            ViewMode::LongSplit => {}
+        }
+    }
+
+    fn fetch_display_lines(
+        range: std::ops::Range<usize>,
+        total_lines: usize,
+        reverse_order: bool,
+        filter_engine: &FilterEngine,
+        reader: &LogReader,
+    ) -> Vec<(usize, usize, String)> {
+        if range.is_empty() {
+            return Vec::new();
+        }
+        let start_row = range.start;
+        let end_row = range.end;
+        let display_indices: Vec<usize> = (start_row..end_row)
+            .map(|row| source_display_index(row, total_lines, reverse_order))
+            .collect();
+        if filter_engine.has_active_filters() {
+            let rows: Vec<(usize, usize)> = display_indices
+                .iter()
+                .enumerate()
+                .filter_map(|(offset, &disp_idx)| {
+                    filter_engine
+                        .get_original_line_index(disp_idx, reader)
+                        .map(|original_idx| (start_row + offset, original_idx))
+                })
+                .collect();
+            let original_indices: Vec<usize> = rows.iter().map(|(_, idx)| *idx).collect();
+            reader
+                .read_lines(&original_indices)
+                .into_iter()
+                .zip(rows)
+                .filter_map(|(line, (row, original_idx))| {
+                    line.map(|line| (row, original_idx, line))
+                })
+                .collect()
+        } else if reverse_order {
+            reader
+                .read_lines(&display_indices)
+                .into_iter()
+                .zip(start_row..end_row)
+                .filter_map(|(line, display_idx)| {
+                    line.map(|line| (display_idx, source_display_index(display_idx, total_lines, true), line))
+                })
+                .collect()
+        } else {
+            reader
+                .read_range(start_row, end_row.saturating_sub(start_row))
+                .into_iter()
+                .map(|(row, line)| (row, row, line))
+                .collect()
+        }
+    }
+
+    fn render_long_split_view(
+        area: Rect,
+        buf: &mut Buffer,
+        theme: &Theme,
+        reader: &LogReader,
+        format_mgr: &FormatManager,
+        filter_engine: &FilterEngine,
+        ui_state: &UiState,
+        total_lines: usize,
+    ) {
+        if area.width < 30 || area.height < 2 {
+            let page_size = area.height as usize;
+            let start = ui_state.scroll_row;
+            let end = (start + page_size).min(total_lines);
+            let lines = Self::fetch_display_lines(start..end, total_lines, ui_state.reverse_order, filter_engine, reader);
+            Self::render_compact_lines(area, buf, theme, &lines, format_mgr, filter_engine, ui_state, total_lines);
+            return;
+        }
+
+        let num_dividers = 2u16;
+        let avail_w = area.width.saturating_sub(num_dividers);
+        let col_w0 = avail_w / 3;
+        let col_w1 = avail_w / 3;
+        let col_w2 = avail_w.saturating_sub(col_w0 + col_w1);
+
+        let col_x0 = area.left();
+        let div_x0 = col_x0 + col_w0;
+        let col_x1 = div_x0 + 1;
+        let div_x1 = col_x1 + col_w1;
+        let col_x2 = div_x1 + 1;
+
+        let has_header = area.height >= 4;
+        let col_content_y = if has_header { area.top() + 1 } else { area.top() };
+        let col_content_h = if has_header { area.height.saturating_sub(1) } else { area.height };
+        let page_size = col_content_h as usize;
+
+        // Draw vertical dividers
+        let divider_style = Style::default().fg(theme.frame_border.fg.unwrap_or(Color::Rgb(70, 80, 100)));
+        let divider_top_char = if has_header { "┬" } else { "│" };
+        for y in area.top()..area.bottom() {
+            let ch = if y == area.top() && has_header { divider_top_char } else { "│" };
+            buf.set_string(div_x0, y, ch, divider_style);
+            buf.set_string(div_x1, y, ch, divider_style);
+        }
+
+        // Compute continuous 3-column newspaper flow:
+        // Column 3 (Right) is the most recent (newest lines at the bottom).
+        // What overflows from the top of Column 3 goes to the bottom of Column 2.
+        // What overflows from the top of Column 2 goes to the bottom of Column 1.
+        let col_end = if ui_state.tail_following {
+            total_lines
+        } else {
+            (ui_state.scroll_row + page_size).min(total_lines)
+        };
+
+        let start_2 = col_end.saturating_sub(page_size);
+        let end_2 = col_end;
+        let range_2 = start_2..end_2;
+
+        let start_1 = start_2.saturating_sub(page_size);
+        let end_1 = start_2;
+        let range_1 = start_1..end_1;
+
+        let start_0 = start_1.saturating_sub(page_size);
+        let end_0 = start_1;
+        let range_0 = start_0..end_0;
+
+        let lines_0 = Self::fetch_display_lines(range_0, total_lines, false, filter_engine, reader);
+        let lines_1 = Self::fetch_display_lines(range_1, total_lines, false, filter_engine, reader);
+        let lines_2 = Self::fetch_display_lines(range_2, total_lines, false, filter_engine, reader);
+
+        // Render column headers if height permits
+        if has_header {
+            let header_y = area.top();
+
+            for x in area.left()..area.right() {
+                if x != div_x0 && x != div_x1 {
+                    if let Some(cell) = buf.cell_mut((x, header_y)) {
+                        cell.set_style(Style::default().bg(theme.bg));
+                    }
+                }
+            }
+
+            let style_prior = Style::default().fg(Color::Rgb(120, 160, 210)).add_modifier(Modifier::BOLD);
+            let style_cur = Style::default().fg(Color::Rgb(100, 255, 170)).add_modifier(Modifier::BOLD);
+
+            let fmt_col_title = |prefix: &str, lines: &[(usize, usize, String)]| -> String {
+                if lines.is_empty() {
+                    format!(" {} (empty) ", prefix)
+                } else {
+                    let first = lines.first().map(|l| l.1 + 1).unwrap_or(0);
+                    let last = lines.last().map(|l| l.1 + 1).unwrap_or(0);
+                    format!(" {} L{}..L{} ", prefix, first, last)
+                }
+            };
+
+            let t0 = fmt_col_title("◀ p-2", &lines_0);
+            let t1 = fmt_col_title("◀ p-1", &lines_1);
+            let t2 = fmt_col_title("● Current", &lines_2);
+
+            buf.set_string(col_x0, header_y, &t0, style_prior);
+            buf.set_string(col_x1, header_y, &t1, style_prior);
+            buf.set_string(col_x2, header_y, &t2, style_cur);
+        }
+
+        // Render contents in 3 columns
+        let area_0 = Rect::new(col_x0, col_content_y, col_w0, col_content_h);
+        let area_1 = Rect::new(col_x1, col_content_y, col_w1, col_content_h);
+        let area_2 = Rect::new(col_x2, col_content_y, col_w2, col_content_h);
+
+        Self::render_compact_lines(area_0, buf, theme, &lines_0, format_mgr, filter_engine, ui_state, total_lines);
+        Self::render_compact_lines(area_1, buf, theme, &lines_1, format_mgr, filter_engine, ui_state, total_lines);
+        Self::render_compact_lines(area_2, buf, theme, &lines_2, format_mgr, filter_engine, ui_state, total_lines);
+
+        // Subtle placeholders if prior columns have no lines
+        if lines_0.is_empty() && area_0.height > 2 {
+            let msg = "[ Start of log / no p-2 ]";
+            let x = area_0.left() + (area_0.width.saturating_sub(msg.len() as u16) / 2);
+            let y = area_0.top() + (area_0.height / 2);
+            buf.set_string(x, y, msg, Style::default().fg(Color::DarkGray));
+        }
+        if lines_1.is_empty() && area_1.height > 2 {
+            let msg = "[ Start of log / no p-1 ]";
+            let x = area_1.left() + (area_1.width.saturating_sub(msg.len() as u16) / 2);
+            let y = area_1.top() + (area_1.height / 2);
+            buf.set_string(x, y, msg, Style::default().fg(Color::DarkGray));
         }
     }
 
@@ -378,16 +555,24 @@ impl FlikUi {
                 x_pos += num_str.len() as u16;
             }
 
-            let fmt = format_mgr.active_format();
             let record = format_mgr.parse_line(raw_line);
-            let has_field = |f: &str| format_mgr.visible_fields.iter().any(|v| v.eq_ignore_ascii_case(f));
+            let line_fmt = record.format;
+            let (source_label, remainder) = crate::format::extract_source_label(raw_line);
+            let source = record.source.as_deref().or(source_label);
+            let has_field = |f: &str| {
+                if record.format != format_mgr.active_format() {
+                    true
+                } else {
+                    format_mgr.visible_fields.iter().any(|v| v.eq_ignore_ascii_case(f))
+                }
+            };
             let pretty_json = if ui_state.auto_indent_json {
-                if fmt == LogFormat::Kubernetes && has_field("message") {
+                if line_fmt == LogFormat::Kubernetes && has_field("message") {
                     serde_json::from_str::<serde_json::Value>(&record.message)
                         .ok()
                         .and_then(|value| serde_json::to_string_pretty(&value).ok())
-                } else if fmt == LogFormat::Json || raw_line.trim().starts_with('{') {
-                    serde_json::from_str::<serde_json::Value>(raw_line.trim())
+                } else if line_fmt == LogFormat::Json || remainder.trim().starts_with('{') {
+                    serde_json::from_str::<serde_json::Value>(remainder.trim())
                         .ok()
                         .and_then(|value| serde_json::to_string_pretty(&value).ok())
                 } else {
@@ -397,22 +582,45 @@ impl FlikUi {
                 None
             };
             if !ui_state.enable_coloration {
-                let remaining_width = area.right().saturating_sub(x_pos) as usize;
+                let mut current_x = x_pos;
+                if let Some(src) = source {
+                    let badge = format!("[{}] ", src);
+                    let badge_color = Self::source_label_color(src);
+                    let badge_len = badge.chars().count() as u16;
+                    if current_x < area.right() {
+                        buf.set_string(
+                            current_x,
+                            y,
+                            &badge,
+                            Style::default().fg(badge_color).add_modifier(Modifier::BOLD).patch(line_bg),
+                        );
+                        current_x = current_x.saturating_add(badge_len);
+                    }
+                }
+                let remaining_width = area.right().saturating_sub(current_x) as usize;
                 if remaining_width > 0 {
-                    let text = if pretty_json.is_some() && fmt == LogFormat::Kubernetes {
-                        &raw_line[..raw_line.len().saturating_sub(record.message.len())]
-                    } else if pretty_json.is_some() && (fmt == LogFormat::Json || raw_line.trim().starts_with('{')) {
+                    let text = if pretty_json.is_some() && line_fmt == LogFormat::Kubernetes {
+                        &remainder[..remainder.len().saturating_sub(record.message.len())]
+                    } else if pretty_json.is_some() && (line_fmt == LogFormat::Json || remainder.trim().starts_with('{')) {
                         record.timestamp.as_deref().unwrap_or("[JSON Entry]")
                     } else {
-                        raw_line
+                        remainder
                     };
                     let to_draw = slice_by_columns(text, ui_state.scroll_col, remaining_width);
-                    buf.set_string(x_pos, y, to_draw, Style::default().fg(theme.fg).patch(line_bg));
+                    buf.set_string(current_x, y, to_draw, Style::default().fg(theme.fg).patch(line_bg));
                 }
             } else {
-                if fmt == LogFormat::Json || raw_line.trim().starts_with('{') {
+                if line_fmt == LogFormat::Json || remainder.trim().starts_with('{') {
                     if pretty_json.is_some() {
-                        let summary = if let Some(ref sev) = record.level {
+                        let summary = if let Some(src) = source {
+                            if let Some(ref sev) = record.level {
+                                format!("[{}] [{}] {}", src, sev.to_uppercase(), record.timestamp.as_deref().unwrap_or(""))
+                            } else if let Some(ref ts) = record.timestamp {
+                                format!("[{}] [JSON] {}", src, ts)
+                            } else {
+                                format!("[{}] [JSON Entry]", src)
+                            }
+                        } else if let Some(ref sev) = record.level {
                             format!("[{}] {}", sev.to_uppercase(), record.timestamp.as_deref().unwrap_or(""))
                         } else if let Some(ref ts) = record.timestamp {
                             format!("[JSON] {}", ts)
@@ -433,6 +641,22 @@ impl FlikUi {
                         };
                         buf.set_string(x_pos, y, to_draw, summary_style.patch(line_bg));
                     } else {
+                        let mut current_x = x_pos;
+                        if let Some(src) = source {
+                            let badge = format!("[{}] ", src);
+                            let badge_color = Self::source_label_color(src);
+                            let badge_len = badge.chars().count() as u16;
+                            if current_x < area.right() {
+                                buf.set_string(
+                                    current_x,
+                                    y,
+                                    &badge,
+                                    Style::default().fg(badge_color).add_modifier(Modifier::BOLD).patch(line_bg),
+                                );
+                                current_x = current_x.saturating_add(badge_len);
+                            }
+                        }
+
                         let is_custom_fields = format_mgr.visible_fields.len() < format_mgr.available_fields.len()
                             && !format_mgr.visible_fields.is_empty();
 
@@ -456,18 +680,26 @@ impl FlikUi {
                                 Some(format!("{{ {} }}", parts.join(", ")))
                             }
                         } else {
-                            Some(raw_line.trim().to_string())
+                            Some(remainder.trim().to_string())
                         };
 
                         if let Some(text) = text_opt {
-                            Self::render_colorized_json(buf, x_pos, y, area.right(), &text, ui_state.scroll_col, line_bg, theme);
+                            Self::render_colorized_json(buf, current_x, y, area.right(), &text, ui_state.scroll_col, line_bg, theme);
                         }
                     }
                 } else {
                     // Structured non-JSON format: build styled segments
                     let mut segments: Vec<(String, Style)> = Vec::new();
 
-                    match fmt {
+                    if let Some(src) = source {
+                        let badge_color = Self::source_label_color(src);
+                        segments.push((
+                            format!("[{}] ", src),
+                            Style::default().fg(badge_color).add_modifier(Modifier::BOLD),
+                        ));
+                    }
+
+                    match line_fmt {
                         LogFormat::ApacheCombined | LogFormat::ApacheCommon => {
                             if has_field("ip") {
                                 if let Some(ip) = record.get_field_value("ip") {
@@ -820,9 +1052,14 @@ impl FlikUi {
                                     };
                                     segments.push((format!("[{}] ", lvl), lvl_style));
                                 }
-                                segments.push((raw_line.clone(), Style::default().fg(theme.fg)));
+                                segments.push((remainder.to_string(), Style::default().fg(theme.fg)));
                             }
                         }
+                    }
+
+                    let initial_len = if source.is_some() { 1 } else { 0 };
+                    if segments.len() <= initial_len {
+                        segments.push((remainder.to_string(), Style::default().fg(theme.fg)));
                     }
 
                     // Render segments with horizontal scroll
@@ -845,7 +1082,7 @@ impl FlikUi {
                         let max_avail = (area.right().saturating_sub(current_x)) as usize;
                         let to_draw = slice_by_columns(&seg_text, skip_in_seg, max_avail);
                         if !to_draw.is_empty() {
-                            if fmt == LogFormat::Kubernetes
+                            if line_fmt == LogFormat::Kubernetes
                                 && seg_text == record.message
                                 && record.fields.len() > 4
                             {
@@ -987,6 +1224,23 @@ impl FlikUi {
         }
     }
 
+    /// Deterministically assign a distinct vibrant color badge to a source label (e.g. `[auth.log]`)
+    pub fn source_label_color(label: &str) -> Color {
+        let mut hash: u32 = 0;
+        for b in label.bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(b as u32);
+        }
+        const PALETTE: [Color; 6] = [
+            Color::Rgb(100, 210, 255), // Cyan
+            Color::Rgb(210, 140, 255), // Purple / Magenta
+            Color::Rgb(255, 185, 80),  // Amber / Gold
+            Color::Rgb(80, 230, 150),  // Emerald Green
+            Color::Rgb(255, 120, 160), // Coral / Pink
+            Color::Rgb(140, 200, 255), // Sky Blue
+        ];
+        PALETTE[(hash as usize) % PALETTE.len()]
+    }
+
     /// Colorizes JSON keys, values, numbers, and syntax punctuation.
     /// Accurately tokenizes from character 0, and offsets rendering by `scroll_col`
     /// without knocking parser phase or mixing syntax colors across column boundaries.
@@ -1031,6 +1285,20 @@ impl FlikUi {
         while i < n {
             if current_col >= scroll_col + max_width {
                 break;
+            }
+
+            // Detect source badge at start of line (e.g. `[api.log] { ... }`)
+            if i == 0 && chars[0] == '[' {
+                if let Some(close_bracket) = chars.iter().position(|&c| c == ']') {
+                    if close_bracket < 35 && close_bracket + 1 < n && chars[close_bracket + 1] == ' ' {
+                        let label_str: String = chars[0..=close_bracket].iter().collect();
+                        let badge_color = Self::source_label_color(&label_str);
+                        render_token(buf, &label_str, Style::default().fg(badge_color).add_modifier(Modifier::BOLD), &mut current_col);
+                        render_token(buf, " ", Style::default(), &mut current_col);
+                        i = close_bracket + 2;
+                        continue;
+                    }
+                }
             }
 
             match chars[i] {
@@ -1364,46 +1632,34 @@ impl FlikUi {
         let is_tail = reader.is_tail_enabled();
         let incoming = reader.incoming_lines_count();
 
-        let (tail_status, tail_style) = if is_growing {
+        let (tail_status, tail_style) = if is_tail {
             let now_m = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_millis() as u64;
             let pulse = (now_m / 450) % 2 == 0;
             let dot = if pulse { "🟢" } else { "●" };
-            if is_tail {
-                if ui_state.tail_following {
-                    (
-                        format!(" | {} LIVE (tail -F) [5/t] ", dot),
-                        Style::default().bg(Color::Rgb(0, 110, 40)).fg(Color::Rgb(120, 255, 170)).add_modifier(Modifier::BOLD)
-                    )
-                } else {
-                    (
-                        format!(" | ⏸ TAIL (paused - press G to follow) [5/t] "),
-                        Style::default().bg(Color::Rgb(130, 60, 0)).fg(Color::Rgb(255, 230, 100)).add_modifier(Modifier::BOLD)
-                    )
-                }
-            } else {
-                let msg = if incoming > 0 {
-                    format!(" | {} LIVE: +{} new lines! [Press 5/t to follow] ", dot, incoming)
-                } else {
-                    format!(" | {} LIVE STREAM! [Press 5/t to follow] ", dot)
-                };
-                (
-                    msg,
-                    Style::default().bg(Color::Rgb(160, 80, 0)).fg(Color::Rgb(255, 240, 100)).add_modifier(Modifier::BOLD)
-                )
-            }
-        } else if is_tail {
             if ui_state.tail_following {
                 (
-                    " | 🟢 TAIL: ON (waiting) [5/t] ".to_string(),
-                    Style::default().bg(theme.status_bar_bg).fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    format!(" | {} LIVE (tail -F) [Press 5/t to pause] ", dot),
+                    Style::default().bg(Color::Rgb(0, 110, 40)).fg(Color::Rgb(120, 255, 170)).add_modifier(Modifier::BOLD)
                 )
             } else {
                 (
-                    " | ⏸ TAIL (paused - press G to follow) [5/t] ".to_string(),
-                    Style::default().bg(theme.status_bar_bg).fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    format!(" | ⏸ TAIL (paused - press G to follow, 5/t to toggle) "),
+                    Style::default().bg(Color::Rgb(130, 60, 0)).fg(Color::Rgb(255, 230, 100)).add_modifier(Modifier::BOLD)
+                )
+            }
+        } else if is_growing {
+            if incoming > 0 {
+                (
+                    format!(" | ⏸ TAIL: OFF (+{} new lines) [Press 5/t to resume] ", incoming),
+                    Style::default().bg(Color::Rgb(45, 52, 64)).fg(Color::Rgb(216, 222, 233))
+                )
+            } else {
+                (
+                    " | ⏸ TAIL: OFF [Press 5/t to follow] ".to_string(),
+                    Style::default().bg(Color::Rgb(45, 52, 64)).fg(Color::Rgb(216, 222, 233))
                 )
             }
         } else {
@@ -1416,6 +1672,7 @@ impl FlikUi {
         let view_mode_str = match format_mgr.view_mode {
             ViewMode::CompactLine => "Line",
             ViewMode::ColumnsTable => "Table",
+            ViewMode::LongSplit => "LongSplit",
         };
 
         let bookmark_indicator = if !ui_state.bookmarks.is_empty() {
@@ -1519,16 +1776,17 @@ impl FlikUi {
         }
 
         let is_growing = reader.is_actively_growing();
-        let tail_label = if is_growing && !reader.is_tail_enabled() {
-            "⚡Follow!"
-        } else if reader.is_tail_enabled() {
+        let tail_label = if reader.is_tail_enabled() {
             "●Tail:ON"
+        } else if is_growing {
+            "○Tail:OFF"
         } else {
             "Tail:OFF"
         };
         let view_label = match format_mgr.view_mode {
             ViewMode::CompactLine => "Table",
-            ViewMode::ColumnsTable => "Line",
+            ViewMode::ColumnsTable => "LongSplit",
+            ViewMode::LongSplit => "Line",
         };
 
         // Mac & standard accessible keybindings

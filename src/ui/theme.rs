@@ -96,6 +96,25 @@ impl ThemeMode {
             ThemeMode::WarmSepia => "Warm Sepia",
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ThemeMode::DarkSlate => "dark_slate",
+            ThemeMode::NordLight => "nord_light",
+            ThemeMode::SolarizedLight => "solarized_light",
+            ThemeMode::WarmSepia => "warm_sepia",
+        }
+    }
+
+    pub fn from_str_name(s: &str) -> Option<Self> {
+        match s.to_lowercase().replace('-', "_").as_str() {
+            "dark" | "dark_slate" | "default" => Some(ThemeMode::DarkSlate),
+            "nord" | "nord_light" | "light" => Some(ThemeMode::NordLight),
+            "solarized" | "solarized_light" | "solarized_sand" => Some(ThemeMode::SolarizedLight),
+            "sepia" | "warm_sepia" => Some(ThemeMode::WarmSepia),
+            _ => None,
+        }
+    }
 }
 
 impl Theme {

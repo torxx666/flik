@@ -58,9 +58,9 @@ pattern = '^(?P<time>\S+) worker=(?P<id>\d+) (?P<status>\S+)$'
     let mut app = App::new(temp_log.path().to_path_buf()).unwrap();
     config.apply(&mut app);
 
-    assert_eq!(app.mouse_capture_enabled, false);
-    assert_eq!(app.ui_state.auto_indent_json, true);
-    assert_eq!(app.ui_state.reverse_order, true);
+    assert!(!app.mouse_capture_enabled);
+    assert!(app.ui_state.auto_indent_json);
+    assert!(app.ui_state.reverse_order);
     assert_eq!(app.ui_state.alert_threshold, 12);
 
     // Apply custom format to app
@@ -69,5 +69,34 @@ pattern = '^(?P<time>\S+) worker=(?P<id>\d+) (?P<status>\S+)$'
     assert!(app.format.available_fields.contains(&"timestamp".to_string()));
     assert!(app.format.available_fields.contains(&"level".to_string()));
     assert!(app.format.available_fields.contains(&"msg".to_string()));
+}
+
+#[test]
+fn test_auto_save_preferences_and_theme_persistence() {
+    let dir = tempdir().unwrap();
+    let config_file = dir.path().join("config.toml");
+
+    // Write initial config
+    std::fs::write(&config_file, "[general]\ntheme = \"dark_slate\"\n").unwrap();
+
+    // Load and update preferences
+    let mut config = FlikConfig::load_from_dir(dir.path());
+    config.general.theme = Some("nord_light".to_string());
+    config.general.auto_indent_json = Some(true);
+    config.general.mouse_capture = Some(false);
+
+    let toml_str = toml::to_string_pretty(&config).unwrap();
+    std::fs::write(&config_file, toml_str).unwrap();
+
+    // Reload from dir and verify persistence
+    let reloaded = FlikConfig::load_from_dir(dir.path());
+    assert_eq!(reloaded.general.theme.as_deref(), Some("nord_light"));
+    assert_eq!(reloaded.general.auto_indent_json, Some(true));
+    assert_eq!(reloaded.general.mouse_capture, Some(false));
+
+    // Verify ThemeMode conversion
+    let mode = flik::ui::theme::ThemeMode::from_str_name("nord_light").unwrap();
+    assert_eq!(mode, flik::ui::theme::ThemeMode::NordLight);
+    assert_eq!(mode.as_str(), "nord_light");
 }
 
