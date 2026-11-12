@@ -52,3 +52,9 @@ The script accepts the SSH destination explicitly; no server address, SSH key or
 ## Search-oriented content
 
 Four practical guides and a guide index are generated from `website/content/guides.json`. They cover Kubernetes JSON, error context, Nginx hourly counts and the scope of Flik versus grep/jq. Canonicals, article metadata, internal links and sitemap URLs are included. The homepage proof uses a five-request synthetic file with two server errors; it is a correctness example, not a performance benchmark.
+
+## Version history and guide review
+
+`content/releases.json` contains the public release history, practical benefits and limits. Regenerate it with `python3 website/scripts/build_releases.py`. Update its release entry and the static `Latest` badge in `dist/index.html` when a new stable version is verified; the existing release API refresh also updates the badge when available. The static value remains readable without JavaScript.
+
+Guide review dates and version scopes live in `content/guides.json`. Rebuild with `python3 website/scripts/build_guides.py website/content/guides.json website/dist`; change the reviewed scope deliberately rather than silently tying every guide to the latest API version. Include new public pages in `dist/sitemap.xml`.

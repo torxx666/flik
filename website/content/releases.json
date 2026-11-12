@@ -1,0 +1,45 @@
+{
+  "updated_on": "2026-11-12",
+  "releases": [
+    {
+      "version": "0.3.0",
+      "date": "November 12, 2026",
+      "headline": "Follow several services in one terminal view",
+      "summary": "Combine live local log files, retain their source labels and keep more consecutive history on screen.",
+      "changes": [
+        {"feature": "Live multi-file merge", "change": "Start a continuously followed, source-tagged stream with -m. Existing events and each live polling batch are sorted by parsed timestamps.", "benefit": "Inspect API, worker and authentication events together while retaining the filename beside each event."},
+        {"feature": "Three-column long-split view", "change": "Use -l to display three consecutive pages: p-2, p-1 and Current. Tab or 4 cycles line, table and long-split views.", "benefit": "Keep more adjacent history visible in a wide terminal. Works with a single file or the live merged stream."},
+        {"feature": "Saved theme and view", "change": "Changes made with T and Tab / 4 are saved in the Flik configuration.", "benefit": "Resume with your preferred theme and layout on the next launch."}
+      ],
+      "commands": "flik -m api.log worker.log auth.log\nflik -m -l api.log worker.log auth.log",
+      "limits": "Live merge sorts each polling batch, not all future arrivals: late events stay appended. Initial contents are loaded into memory and the temporary merged file grows. Truncation is detected when size decreases; replacement with a same-size or larger file can miss events. The three columns are consecutive pages, not one column per service."
+    },
+    {
+      "version": "0.2.0",
+      "date": "November 5, 2026",
+      "headline": "Inspect more formats and investigate structured events",
+      "summary": "Broader structured-log support and investigation tools reduce the manual preparation needed before inspecting cloud, web and system logs.",
+      "changes": [
+        {"feature": "Cloud, system and custom formats", "change": "Adds CloudWatch and Google Cloud Logging field handling, Logfmt detection, auth/syslog enrichment, extended access logs and named custom regex formats.", "benefit": "Inspect fields from more existing log formats without first converting each file to a common schema."},
+        {"feature": "Correlation and JSON inspection", "change": "Adds correlation identifier extraction, the J JSON inspector and nested JSON completion in search and filter editors.", "benefit": "Locate identifiers and inspect nested payloads while refining an investigation."},
+        {"feature": "Full-file analytics option", "change": "The S dashboard can switch from its default sample to a full indexed-file scan with a. Live error-rate alerting is also available.", "benefit": "Choose between a quick sampled overview and a broader count; keep the scope of the result explicit."},
+        {"feature": "Configuration and distribution", "change": "Adds global TOML configuration, modular format definitions, native Windows binaries and the Homebrew tap.", "benefit": "Reuse settings and install a prebuilt binary on the supported platform."}
+      ],
+      "commands": "flik --format logfmt app.log\nflik /var/log/auth.log",
+      "limits": "Field extraction depends on the input format. The default S dashboard remains sampled until a full scan is selected. Correlation identifiers help investigation but do not establish causality."
+    },
+    {
+      "version": "0.1.0",
+      "date": "October 26, 2026",
+      "headline": "A local interactive workspace for log investigation",
+      "summary": "The initial release established interactive filtering, context and navigation for local files and piped streams.",
+      "changes": [
+        {"feature": "Indexed file navigation", "change": "Background byte-offset indexing supports direct navigation through local log files.", "benefit": "Move through a file and refine the visible result while indexing progresses."},
+        {"feature": "Filters and context", "change": "Stack include/exclude conditions and use smart find to retain surrounding lines.", "benefit": "Inspect the evidence around an error instead of retaining only matching lines."},
+        {"feature": "Investigation workspace", "change": "Includes independent split panes, time and frequency tools, request correlation workflows, incident export and session save/restore.", "benefit": "Keep the investigation state and source context together while moving between questions."}
+      ],
+      "commands": "flik app.log\nflik api.log worker.log",
+      "limits": "The byte-offset index still uses memory proportional to line count. Initial distribution covered Linux and macOS. This version does not include the continuously followed CLI multi-file merge or the three-column layout added in 0.3.0."
+    }
+  ]
+}

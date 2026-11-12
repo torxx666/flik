@@ -59,6 +59,8 @@ function renderInstall(){
  $('checksum-link').hidden=!(checksums&&checksums.browser_download_url===checksumURL);
  if(!$('checksum-link').hidden)$('checksum-link').href=checksumURL;
  $('release-version').textContent=release?.tag_name||'RELEASES';
+ const latestBadge=$('latest-release-badge');
+ if(latestBadge&&release&&/^v\d+\.\d+\.\d+$/.test(release.tag_name))latestBadge.textContent=`Latest: ${release.tag_name.slice(1)}`;
  $('release-status').textContent=release?`Release ${version} · macOS, Linux & Windows`:repository?'Releases available on GitHub':'Checking latest release...';
  if(release){$('installer-command').textContent=`curl -fsSL https://raw.githubusercontent.com/${repository}/${version}/scripts/install.sh -o install-flik.sh\nFLIK_REPO=${repository} sh install-flik.sh`;}
 }
