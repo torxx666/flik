@@ -1,0 +1,2 @@
+2026-11-12T10:00:01Z INFO request=req-42 job_started
+2026-11-12T10:00:02Z WARN request=req-42 retry_scheduled

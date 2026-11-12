@@ -1,0 +1,2 @@
+2026-11-12T10:00:00Z INFO request=req-42 accepted
+2026-11-12T10:00:03Z ERROR request=req-42 upstream_timeout
