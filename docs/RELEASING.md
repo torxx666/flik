@@ -9,7 +9,7 @@ Users download a versioned executable from GitHub Releases. They do not need Rus
 | Linux x86-64 | `x86_64-unknown-linux-musl` | `ubuntu-24.04` |
 | Linux ARM64 | `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` |
 | macOS Intel, macOS 11+ | `x86_64-apple-darwin` | `macos-15-intel` |
-| macOS Apple Silicon, macOS 11+ | `aarch64-apple-darwin` | `macos-14` |
+| macOS Apple Silicon, macOS 11+ | `aarch64-apple-darwin` | `macos-15` |
 
 Archives are named `flik-vMAJOR.MINOR.PATCH-TARGET.tar.gz` and contain the executable `flik` and the project `LICENSE`, with no enclosing directory. Linux releases are built against musl and checked for static linking. Each archive has an entry in the release-wide `SHA256SUMS` file.
 
@@ -105,3 +105,7 @@ cargo test --locked --all-targets
 - [GitHub CLI release creation, drafts and tag verification](https://cli.github.com/manual/gh_release_create)
 - [Rust ARM64 musl target](https://doc.rust-lang.org/rustc/platform-support/aarch64-unknown-linux-musl.html)
 - [Apple's guidance for opening unverified apps](https://support.apple.com/en-au/102445)
+
+### Rebuild an existing, unpublished tag
+
+If the runner configuration has retired, update the workflow on main, then dispatch Release binaries with `release_tag` set to the existing tag. Checkout is pinned to that tag; the package version is validated and all platform tests run again. The published tag is not moved. Existing releases are never overwritten.
