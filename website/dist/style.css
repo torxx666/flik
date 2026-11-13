@@ -52,3 +52,5 @@ kbd{font-size:13px;padding:3px 6px}.shortcut-groups{align-items:start}.shortcut-
 
 /* Selected F1 mascot beside the product introduction. */
 .hero-heading{grid-template-columns:200px 1.05fr 1fr;gap:32px}.hero-mascot{display:block;width:100%;height:auto;max-width:240px;filter:drop-shadow(0 14px 24px #0003)}.hero-stage .hero-heading h1{font-size:clamp(38px,3.8vw,58px)}@media(max-width:1100px){.hero-heading{grid-template-columns:180px 1fr;gap:28px}.hero-heading .hero-copy{grid-column:1/-1;max-width:850px}.hero-stage .hero-copy .intro{max-width:100%}}@media(max-width:600px){.hero-heading{grid-template-columns:110px minmax(0,1fr);gap:18px}.hero-stage .hero-heading h1{font-size:clamp(29px,6vw,38px)}.hero-heading .eyebrow{font-size:10px;letter-spacing:.04em}.hero-heading .hero-copy{grid-column:1/-1}.hero-mascot{max-width:140px}}
+/* Keep long command examples inside their cards on small screens. */
+.format-grid article{min-width:0}.format-grid pre{max-width:100%;overflow-x:auto}.hero-heading>div{min-width:0}
